@@ -1,7 +1,7 @@
 name: Bot de Atención
 on:
   schedule:
-    - cron: '*/2 * * * *'
+    - cron: '*/1 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -9,25 +9,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Restaurar offset guardado
+      
+      - name: Restaurar archivos de estado
         uses: actions/cache@v3
         with:
-          path: offset.json
-          key: offset-${{ runner.os }}-${{ github.sha }}
+          path: |
+            offset.json
+            orders.json
+          key: estado-${{ github.sha }}
           restore-keys: |
-            offset-${{ runner.os }}-
+            estado-
+      
       - run: pip install -r requirements.txt
+      
       - run: python bot.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID_DUENO: ${{ secrets.TELEGRAM_CHAT_ID_DUENO }}
           CALLMEBOT_API_KEY: ${{ secrets.CALLMEBOT_API_KEY }}
           MI_NUMERO_WHATSAPP: ${{ secrets.MI_NUMERO_WHATSAPP }}
-      - name: Guardar offset para la próxima ejecución
+      
+      - name: Guardar archivos de estado
         uses: actions/cache@v3
         with:
-          path: offset.json
-          key: offset-${{ runner.os }}-${{ github.sha }}
+          path: |
+            offset.json
+            orders.json
+          key: estado-${{ github.sha }}
