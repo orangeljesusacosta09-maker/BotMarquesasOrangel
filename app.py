@@ -3,6 +3,7 @@ import json
 import logging
 import requests
 from flask import Flask, request, jsonify
+from urllib.parse import quote  # <-- Importante para codificar el mensaje
 
 # ============================
 # CONFIGURACIÓN
@@ -71,19 +72,38 @@ def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
         logging.error(f"Excepción enviando foto: {e}")
         send_telegram(chat_id, caption)
 
+# ============================
+# FUNCIÓN MEJORADA PARA WHATSAPP
+# ============================
 def send_whatsapp_alert(mensaje):
-    if not CALLMEBOT_API_KEY or not MI_NUMERO_WHATSAPP:
-        logging.warning("Faltan credenciales de WhatsApp")
+    # Verificar credenciales
+    if not CALLMEBOT_API_KEY:
+        logging.error("❌ CALLMEBOT_API_KEY no está definida en las variables de entorno")
         return
-    url = f"https://api.callmebot.com/whatsapp.php?phone={MI_NUMERO_WHATSAPP}&text={mensaje}&apikey={CALLMEBOT_API_KEY}"
+    if not MI_NUMERO_WHATSAPP:
+        logging.error("❌ MI_NUMERO_WHATSAPP no está definida en las variables de entorno")
+        return
+
+    # Codificar el mensaje para URL (espacios, tildes, etc.)
+    mensaje_codificado = quote(mensaje)
+    url = f"https://api.callmebot.com/whatsapp.php?phone={MI_NUMERO_WHATSAPP}&text={mensaje_codificado}&apikey={CALLMEBOT_API_KEY}"
+
+    logging.info(f"📤 Enviando WhatsApp a {MI_NUMERO_WHATSAPP}")
+    logging.info(f"📤 URL: {url[:100]}...")  # Mostrar parte de la URL para depurar
+
     try:
-        requests.get(url)
-        logging.info("Alerta WhatsApp enviada")
+        resp = requests.get(url, timeout=10)
+        logging.info(f"✅ Respuesta de CallMeBot: Código {resp.status_code}")
+        logging.info(f"📄 Contenido: {resp.text[:200]}")
+        if resp.status_code == 200 and "success" in resp.text.lower():
+            logging.info("✅ Alerta WhatsApp enviada con éxito")
+        else:
+            logging.warning(f"⚠️ La respuesta no indica éxito: {resp.text}")
     except Exception as e:
-        logging.error(f"Error enviando WhatsApp: {e}")
+        logging.error(f"❌ Error enviando WhatsApp: {e}")
 
 # ============================
-# PROCESAMIENTO DE MENSAJES (CORREGIDO)
+# PROCESAMIENTO DE MENSAJES
 # ============================
 def process_message(update):
     message = update.get("message")
@@ -100,19 +120,16 @@ def process_message(update):
     logging.info(f"📩 Mensaje de {username} (ID:{user_id}): '{text}'")
 
     # ============================================
-    # 1. CAPTURA DE TELÉFONO (PRIORIDAD MÁXIMA)
+    # 1. CAPTURA DE TELÉFONO
     # ============================================
     orders = load_orders()
     if user_id in orders and orders[user_id].get("estado") == "esperando_telefono":
-        # Cualquier mensaje que envíe el usuario aquí es su número de teléfono
         phone = text
-        # Limpiar el teléfono de caracteres no numéricos (opcional)
         phone_clean = phone.replace("+", "").replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
-        # Validación básica: al menos 10 dígitos (para evitar respuestas vacías)
         if not phone_clean.isdigit() or len(phone_clean) < 10:
             send_telegram(chat_id, "📱 Por favor, envía un número de WhatsApp válido (ej: 0412-1234567).")
             return
-        # Guardar pedido completado
+
         orders[user_id]["telefono"] = phone
         orders[user_id]["estado"] = "completado"
         producto = orders[user_id]["producto"]
@@ -124,10 +141,11 @@ def process_message(update):
             f"🚚 *Delivery en {DIRECCION}*\n🙏 ¡Gracias por preferir {NOMBRE_NEGOCIO}!"
         )
 
-        # Alerta al dueño (WhatsApp + Telegram)
-        alerta = f"¡NUEVO+PEDIDO!%0AProducto: {producto}%0ATeléfono: {phone}%0ACliente: @{username}"
+        # --- ALERTA AL DUEÑO (WhatsApp + Telegram) ---
+        alerta = f"¡NUEVO PEDIDO! Producto: {producto} Teléfono: {phone} Cliente: @{username}"
+        logging.info(f"📢 Enviando alerta: {alerta}")
         send_whatsapp_alert(alerta)
-        
+
         if CHAT_ID_DUENO:
             try:
                 send_telegram(CHAT_ID_DUENO,
@@ -138,7 +156,7 @@ def process_message(update):
         return
 
     # ============================================
-    # 2. COMANDOS /start y /menu
+    # 2. COMANDOS
     # ============================================
     if text == "/start":
         send_telegram(chat_id,
@@ -161,14 +179,13 @@ def process_message(update):
         return
 
     # ============================================
-    # 3. SELECCIÓN DE PRODUCTO (número del menú)
+    # 3. SELECCIÓN DE PRODUCTO
     # ============================================
     if text.isdigit():
         num = int(text)
         catalog = load_catalog()
         if 1 <= num <= len(catalog):
             product = catalog[num-1]
-            # Guardar estado del pedido
             orders = load_orders()
             if user_id not in orders:
                 orders[user_id] = {}
@@ -180,7 +197,6 @@ def process_message(update):
                        f"💰 *Precio:* {product['precio']}\n\n"
                        f"🚚 *Delivery:* {DIRECCION} (sin costo extra)\n"
                        "📱 Ahora envíame *tu número de WhatsApp* (ej: 0412-1234567).")
-            # Enviar foto si existe
             try:
                 send_photo_telegram(chat_id, product['imagen'], caption)
             except Exception as e:
