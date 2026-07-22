@@ -1,8 +1,51 @@
 [
-  { "id": 1, "nombre": "Marquesa de Chocolate", "gramos": "140g", "precio": "2.2 Bs", "imagen": "images/marquesa_de_chocolate_140g_2.2_BCV.webp" },
-  { "id": 2, "nombre": "Marquesa de Chocolate", "gramos": "250g", "precio": "3.5 Bs", "imagen": "images/marquesa_de_chocolate_250g_3.5_BCV.webp" },
-  { "id": 3, "nombre": "Marquesa de Limón", "gramos": "140g", "precio": "2.2 Bs", "imagen": "images/marquesa_de_limon_140g_2.2_BCV.webp" },
-  { "id": 4, "nombre": "Marquesa de Limón", "gramos": "250g", "precio": "3.5 Bs", "imagen": "images/marquesa_de_limon_250g_3.5_BCV.webp" },
-  { "id": 5, "nombre": "Marquesa de Parchita", "gramos": "140g", "precio": "2.2 Bs", "imagen": "images/marquesa_de_parchita_140g_2.2_BCV.webp" },
-  { "id": 6, "nombre": "Marquesa de Parchita", "gramos": "250g", "precio": "3.5 Bs", "imagen": "images/marquesa_de_parchita_250g_3.5_BCV.webp" }
-]    { "id": 7, "nombre": "🔥 PROMO 3 Vasitos (140g c/u)", "gramos": "3x140g", "precio": "5 $ (pago en Bs al BCV)", "imagen": "images/promo_3vasitos.jpg" }
+  {
+    "id": 1,
+    "nombre": "Marquesa de Chocolate",
+    "gramos": "140g",
+    "precio": "2.2 $ (a tasa BCV)",
+    "imagen": "images/marquesa_de_chocolate_140g_2.2_BCV.webp"
+  },
+  {
+    "id": 2,
+    "nombre": "Marquesa de Chocolate",
+    "gramos": "250g",
+    "precio": "3.5 $ (a tasa BCV)",
+    "imagen": "images/marquesa_de_chocolate_250g_3.5_BCV.webp"
+  },
+  {
+    "id": 3,
+    "nombre": "Marquesa de Limón",
+    "gramos": "140g",
+    "precio": "2.2 $ (a tasa BCV)",
+    "imagen": "images/marquesa_de_limon_140g_2.2_BCV.webp"
+  },
+  {
+    "id": 4,
+    "nombre": "Marquesa de Limón",
+    "gramos": "250g",
+    "precio": "3.5 $ (a tasa BCV)",
+    "imagen": "images/marquesa_de_limon_250g_3.5_BCV.webp"
+  },
+  {
+    "id": 5,
+    "nombre": "Marquesa de Parchita",
+    "gramos": "140g",
+    "precio": "2.2 $ (a tasa BCV)",
+    "imagen": "images/marquesa_de_parchita_140g_2.2_BCV.webp"
+  },
+  {
+    "id": 6,
+    "nombre": "Marquesa de Parchita",
+    "gramos": "250g",
+    "precio": "3.5 $ (a tasa BCV)",
+    "imagen": "images/marquesa_de_parchita_250g_3.5_BCV.webp"
+  },
+  {
+    "id": 7,
+    "nombre": "🔥 COMBO 3x5$ (Parchita, Limón y Chocolate)",
+    "gramos": "3x140g",
+    "precio": "5 $ (a tasa BCV)",
+    "imagen": "images/combo_tres_sabores.webp"
+  }
+]
