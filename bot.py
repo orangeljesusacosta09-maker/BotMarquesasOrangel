@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import requests
+import sys
 
 logging.basicConfig(level=logging.INFO)
 
@@ -10,15 +11,19 @@ CHAT_ID_DUENO = os.environ.get("TELEGRAM_CHAT_ID_DUENO")
 CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
 MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
 
-DIRECCION = "Oropeza Castillo"  # Zona de entrega
+DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
 
 OFFSET_FILE = "offset.json"
 ORDERS_FILE = "orders.json"
 
 def load_catalog():
-    with open("catalog.json", "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open("catalog.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logging.error(f"Error cargando catalog.json: {e}")
+        return []
 
 def load_offset():
     try:
@@ -28,8 +33,13 @@ def load_offset():
         return 0
 
 def save_offset(offset):
-    with open(OFFSET_FILE, "w") as f:
-        json.dump({"offset": offset}, f)
+    try:
+        with open(OFFSET_FILE, "w") as f:
+            json.dump({"offset": offset}, f)
+        # Forzar la escritura en disco
+        os.fsync(f.fileno())
+    except Exception as e:
+        logging.error(f"Error guardando offset: {e}")
 
 def load_orders():
     try:
@@ -39,14 +49,20 @@ def load_orders():
         return {}
 
 def save_orders(orders):
-    with open(ORDERS_FILE, "w") as f:
-        json.dump(orders, f, indent=2)
+    try:
+        with open(ORDERS_FILE, "w") as f:
+            json.dump(orders, f, indent=2)
+        os.fsync(f.fileno())
+    except Exception as e:
+        logging.error(f"Error guardando orders: {e}")
 
 def send_telegram(chat_id, text, parse_mode="Markdown"):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     data = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
     try:
-        requests.post(url, json=data)
+        resp = requests.post(url, json=data, timeout=10)
+        if resp.status_code != 200:
+            logging.error(f"Error enviando mensaje: {resp.text}")
     except Exception as e:
         logging.error(f"Error enviando mensaje: {e}")
 
@@ -56,7 +72,10 @@ def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
         with open(photo_path, 'rb') as photo_file:
             files = {'photo': photo_file}
             data = {'chat_id': chat_id, 'caption': caption, 'parse_mode': parse_mode}
-            requests.post(url, files=files, data=data)
+            resp = requests.post(url, files=files, data=data, timeout=10)
+            if resp.status_code != 200:
+                logging.error(f"Error enviando foto: {resp.text}")
+                send_telegram(chat_id, caption)
     except Exception as e:
         logging.error(f"Error enviando foto: {e}")
         send_telegram(chat_id, caption)
@@ -66,7 +85,7 @@ def send_whatsapp_alert(mensaje):
         return
     url = f"https://api.callmebot.com/whatsapp.php?phone={MI_NUMERO_WHATSAPP}&text={mensaje}&apikey={CALLMEBOT_API_KEY}"
     try:
-        requests.get(url)
+        requests.get(url, timeout=10)
     except Exception as e:
         logging.error(f"Error enviando WhatsApp: {e}")
 
@@ -126,7 +145,7 @@ def process_message(update):
         producto = orders[user_id]["producto"]
         save_orders(orders)
 
-        # --- RESPUESTA INMEDIATA AL CLIENTE (No espera a la alerta del dueño) ---
+        # RESPUESTA INMEDIATA AL CLIENTE
         send_telegram(chat_id,
             f"✅ ¡Gracias, {message['from'].get('first_name', 'cliente')}!\n\n"
             "Tu pedido ha sido recibido. En los próximos minutos te contactaré para confirmar el pago y coordinar la entrega.\n\n"
@@ -134,7 +153,7 @@ def process_message(update):
             "🙏 ¡Gracias por preferir Marquesas Orangel!"
         )
 
-        # --- ALERTA PARA EL DUEÑO (WhatsApp + Telegram personal) ---
+        # ALERTA PARA EL DUEÑO
         alerta = f"¡NUEVO+PEDIDO!%0AProducto: {producto}%0ATeléfono: {phone}%0ACliente: @{message['from'].get('username', 'sin usuario')}%0AZona: {DIRECCION}"
         send_whatsapp_alert(alerta)
 
@@ -154,7 +173,7 @@ def main():
     url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
     params = {"offset": offset, "timeout": 30}
     try:
-        resp = requests.get(url, params=params)
+        resp = requests.get(url, params=params, timeout=30)
         data = resp.json()
         if data.get("ok"):
             for result in data.get("result", []):
@@ -162,10 +181,11 @@ def main():
                 if result["update_id"] >= offset:
                     offset = result["update_id"] + 1
             save_offset(offset)
+            logging.info(f"Offset guardado: {offset}")
         else:
-            logging.error(f"Error: {data}")
+            logging.error(f"Error en getUpdates: {data}")
     except Exception as e:
-        logging.error(f"Error: {e}")
+        logging.error(f"Error en main: {e}")
 
 if __name__ == "__main__":
     main()
