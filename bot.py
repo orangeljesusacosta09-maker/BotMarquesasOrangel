@@ -10,7 +10,7 @@ CHAT_ID_DUENO = os.environ.get("TELEGRAM_CHAT_ID_DUENO")
 CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
 MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
 
-DIRECCION = "Oropeza Castillo, [tu dirección]"
+DIRECCION = "Oropeza Castillo, [Pon aquí tu calle y número]"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
 
 OFFSET_FILE = "offset.json"
@@ -50,6 +50,20 @@ def send_telegram(chat_id, text, parse_mode="Markdown"):
     except Exception as e:
         logging.error(f"Error enviando mensaje: {e}")
 
+# --- NUEVA FUNCIÓN PARA ENVIAR FOTOS ---
+def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+    try:
+        # Abrimos el archivo de la foto desde el repositorio
+        with open(photo_path, 'rb') as photo_file:
+            files = {'photo': photo_file}
+            data = {'chat_id': chat_id, 'caption': caption, 'parse_mode': parse_mode}
+            requests.post(url, files=files, data=data)
+    except Exception as e:
+        logging.error(f"Error enviando foto: {e}")
+        # Si falla la foto, enviamos solo el texto
+        send_telegram(chat_id, caption)
+
 def send_whatsapp_alert(mensaje):
     if not CALLMEBOT_API_KEY or not MI_NUMERO_WHATSAPP:
         return
@@ -77,7 +91,7 @@ def process_message(update):
 
     if text == "/menu":
         catalog = load_catalog()
-        msg = "📋 *Menú:*\n\n"
+        msg = "📋 *Nuestro Menú:*\n\n"
         for i, item in enumerate(catalog, start=1):
             msg += f"{i}. {item['nombre']} - {item['gramos']} ({item['precio']})\n"
         msg += "\nResponde con el *número* que deseas."
@@ -96,13 +110,13 @@ def process_message(update):
             orders[user_id]["estado"] = "esperando_telefono"
             save_orders(orders)
 
-            send_telegram(chat_id,
-                f"✅ Seleccionaste: *{product['nombre']}* ({product['gramos']})\n"
-                f"Precio: {product['precio']}\n\n"
-                "📱 Envíame tu número de WhatsApp (ej: 0414-1234567)."
-            )
+            # --- AQUÍ ENVÍA LA FOTO ---
+            caption = (f"✅ *Elegiste:* {product['nombre']} ({product['gramos']})\n"
+                       f"💰 *Precio:* {product['precio']}\n\n"
+                       "📱 Ahora envíame *tu número de WhatsApp* (ej: 0414-1234567).")
+            send_photo_telegram(chat_id, product['imagen'], caption)
         else:
-            send_telegram(chat_id, "❌ Número inválido.")
+            send_telegram(chat_id, "❌ Número inválido. Usa /menu.")
         return
 
     orders = load_orders()
@@ -114,7 +128,7 @@ def process_message(update):
         save_orders(orders)
 
         send_telegram(chat_id,
-            f"🎉 ¡Pedido listo!\nProducto: {producto}\nTeléfono: {phone}\n📍 Retiro: {DIRECCION}"
+            f"🎉 ¡Pedido listo!\nProducto: {producto}\nTeléfono: {phone}\n📍 Retiro: {DIRECCION}\n\nPronto te contactaré."
         )
 
         alerta = f"¡NUEVO+PEDIDO!%0AProducto: {producto}%0ATeléfono: {phone}%0ACliente: @{message['from'].get('username', 'sin usuario')}"
