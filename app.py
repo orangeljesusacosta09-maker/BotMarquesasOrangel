@@ -83,7 +83,7 @@ def send_whatsapp_alert(mensaje):
         logging.error(f"Error enviando WhatsApp: {e}")
 
 # ============================
-# PROCESAMIENTO DE MENSAJES
+# PROCESAMIENTO DE MENSAJES (CORREGIDO)
 # ============================
 def process_message(update):
     message = update.get("message")
@@ -99,67 +99,20 @@ def process_message(update):
 
     logging.info(f"📩 Mensaje de {username} (ID:{user_id}): '{text}'")
 
-    # =====================
-    # COMANDO /start
-    # =====================
-    if text == "/start":
-        send_telegram(chat_id,
-            f"🍰 ¡Bienvenido a {NOMBRE_NEGOCIO}!\n\n"
-            "Envía /menu para ver el catálogo.\n"
-            f"🚚 *Delivery:* Disponible SOLO en {DIRECCION}."
-        )
-        return
-
-    # =====================
-    # COMANDO /menu
-    # =====================
-    if text == "/menu":
-        catalog = load_catalog()
-        if not catalog:
-            send_telegram(chat_id, "❌ Error al cargar el catálogo. Contacta al administrador.")
-            return
-        msg = "📋 *Nuestro Menú:*\n\n"
-        for i, item in enumerate(catalog, start=1):
-            msg += f"{i}. {item['nombre']} - {item['gramos']} ({item['precio']})\n"
-        msg += f"\nResponde con el *número* que deseas.\n\n🚚 *Delivery en {DIRECCION}.*"
-        send_telegram(chat_id, msg)
-        return
-
-    # =====================
-    # SELECCIÓN DE PRODUCTO (número)
-    # =====================
-    if text.isdigit():
-        num = int(text)
-        catalog = load_catalog()
-        if 1 <= num <= len(catalog):
-            product = catalog[num-1]
-            # Guardar estado del pedido
-            orders = load_orders()
-            if user_id not in orders:
-                orders[user_id] = {}
-            orders[user_id]["producto"] = f"{product['nombre']} - {product['gramos']} ({product['precio']})"
-            orders[user_id]["estado"] = "esperando_telefono"
-            save_orders(orders)
-
-            caption = (f"✅ *Elegiste:* {product['nombre']} ({product['gramos']})\n"
-                       f"💰 *Precio:* {product['precio']}\n\n"
-                       f"🚚 *Delivery:* {DIRECCION} (sin costo extra)\n"
-                       "📱 Ahora envíame *tu número de WhatsApp* (ej: 0414-1234567).")
-            # Enviar foto si existe
-            try:
-                send_photo_telegram(chat_id, product['imagen'], caption)
-            except:
-                send_telegram(chat_id, caption)
-        else:
-            send_telegram(chat_id, "❌ Número inválido. Usa /menu.")
-        return
-
-    # =====================
-    # CAPTURA DE TELÉFONO (flujo de crédito)
-    # =====================
+    # ============================================
+    # 1. CAPTURA DE TELÉFONO (PRIORIDAD MÁXIMA)
+    # ============================================
     orders = load_orders()
     if user_id in orders and orders[user_id].get("estado") == "esperando_telefono":
+        # Cualquier mensaje que envíe el usuario aquí es su número de teléfono
         phone = text
+        # Limpiar el teléfono de caracteres no numéricos (opcional)
+        phone_clean = phone.replace("+", "").replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
+        # Validación básica: al menos 10 dígitos (para evitar respuestas vacías)
+        if not phone_clean.isdigit() or len(phone_clean) < 10:
+            send_telegram(chat_id, "📱 Por favor, envía un número de WhatsApp válido (ej: 0412-1234567).")
+            return
+        # Guardar pedido completado
         orders[user_id]["telefono"] = phone
         orders[user_id]["estado"] = "completado"
         producto = orders[user_id]["producto"]
@@ -184,9 +137,62 @@ def process_message(update):
                 logging.error(f"Error enviando alerta al dueño: {e}")
         return
 
-    # =====================
-    # MENSAJE POR DEFECTO
-    # =====================
+    # ============================================
+    # 2. COMANDOS /start y /menu
+    # ============================================
+    if text == "/start":
+        send_telegram(chat_id,
+            f"🍰 ¡Bienvenido a {NOMBRE_NEGOCIO}!\n\n"
+            "Envía /menu para ver el catálogo.\n"
+            f"🚚 *Delivery:* Disponible SOLO en {DIRECCION}."
+        )
+        return
+
+    if text == "/menu":
+        catalog = load_catalog()
+        if not catalog:
+            send_telegram(chat_id, "❌ Error al cargar el catálogo. Contacta al administrador.")
+            return
+        msg = "📋 *Nuestro Menú:*\n\n"
+        for i, item in enumerate(catalog, start=1):
+            msg += f"{i}. {item['nombre']} - {item['gramos']} ({item['precio']})\n"
+        msg += f"\nResponde con el *número* que deseas.\n\n🚚 *Delivery en {DIRECCION}.*"
+        send_telegram(chat_id, msg)
+        return
+
+    # ============================================
+    # 3. SELECCIÓN DE PRODUCTO (número del menú)
+    # ============================================
+    if text.isdigit():
+        num = int(text)
+        catalog = load_catalog()
+        if 1 <= num <= len(catalog):
+            product = catalog[num-1]
+            # Guardar estado del pedido
+            orders = load_orders()
+            if user_id not in orders:
+                orders[user_id] = {}
+            orders[user_id]["producto"] = f"{product['nombre']} - {product['gramos']} ({product['precio']})"
+            orders[user_id]["estado"] = "esperando_telefono"
+            save_orders(orders)
+
+            caption = (f"✅ *Elegiste:* {product['nombre']} ({product['gramos']})\n"
+                       f"💰 *Precio:* {product['precio']}\n\n"
+                       f"🚚 *Delivery:* {DIRECCION} (sin costo extra)\n"
+                       "📱 Ahora envíame *tu número de WhatsApp* (ej: 0412-1234567).")
+            # Enviar foto si existe
+            try:
+                send_photo_telegram(chat_id, product['imagen'], caption)
+            except Exception as e:
+                logging.error(f"Error enviando foto: {e}")
+                send_telegram(chat_id, caption)
+        else:
+            send_telegram(chat_id, "❌ Número inválido. Usa /menu.")
+        return
+
+    # ============================================
+    # 4. MENSAJE POR DEFECTO
+    # ============================================
     send_telegram(chat_id, "📌 Usa /menu para ver los productos.")
 
 # ============================
