@@ -10,7 +10,7 @@ CHAT_ID_DUENO = os.environ.get("TELEGRAM_CHAT_ID_DUENO")
 CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
 MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
 
-DIRECCION = "Oropeza Castillo, [Pon aquí tu calle y número]"
+DIRECCION = "Oropeza Castillo"  # Zona de entrega
 NOMBRE_NEGOCIO = "Marquesas Orangel"
 
 OFFSET_FILE = "offset.json"
@@ -50,18 +50,15 @@ def send_telegram(chat_id, text, parse_mode="Markdown"):
     except Exception as e:
         logging.error(f"Error enviando mensaje: {e}")
 
-# --- NUEVA FUNCIÓN PARA ENVIAR FOTOS ---
 def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
     url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
     try:
-        # Abrimos el archivo de la foto desde el repositorio
         with open(photo_path, 'rb') as photo_file:
             files = {'photo': photo_file}
             data = {'chat_id': chat_id, 'caption': caption, 'parse_mode': parse_mode}
             requests.post(url, files=files, data=data)
     except Exception as e:
         logging.error(f"Error enviando foto: {e}")
-        # Si falla la foto, enviamos solo el texto
         send_telegram(chat_id, caption)
 
 def send_whatsapp_alert(mensaje):
@@ -84,8 +81,10 @@ def process_message(update):
     if text == "/start":
         send_telegram(chat_id,
             f"🍰 ¡Bienvenido a {NOMBRE_NEGOCIO}!\n\n"
-            "Envía /menu para ver el catálogo.\n"
-            f"📍 Retiro en {DIRECCION}."
+            "Envía /menu para ver el catálogo con fotos y precios.\n"
+            f"🚚 *Delivery:* Disponible SOLO en {DIRECCION}.\n"
+            f"📍 *Retiro:* También en mi domicilio.\n\n"
+            "¡Elige tu favorita!"
         )
         return
 
@@ -94,7 +93,7 @@ def process_message(update):
         msg = "📋 *Nuestro Menú:*\n\n"
         for i, item in enumerate(catalog, start=1):
             msg += f"{i}. {item['nombre']} - {item['gramos']} ({item['precio']})\n"
-        msg += "\nResponde con el *número* que deseas."
+        msg += "\nResponde con el *número* que deseas.\n\n🚚 *Delivery en Oropeza Castillo.*"
         send_telegram(chat_id, msg)
         return
 
@@ -110,10 +109,10 @@ def process_message(update):
             orders[user_id]["estado"] = "esperando_telefono"
             save_orders(orders)
 
-            # --- AQUÍ ENVÍA LA FOTO ---
             caption = (f"✅ *Elegiste:* {product['nombre']} ({product['gramos']})\n"
                        f"💰 *Precio:* {product['precio']}\n\n"
-                       "📱 Ahora envíame *tu número de WhatsApp* (ej: 0414-1234567).")
+                       f"🚚 *Delivery:* {DIRECCION} (sin costo extra)\n"
+                       "📱 Ahora envíame *tu número de WhatsApp* (ej: 0414-1234567) para coordinar la entrega.")
             send_photo_telegram(chat_id, product['imagen'], caption)
         else:
             send_telegram(chat_id, "❌ Número inválido. Usa /menu.")
@@ -127,12 +126,25 @@ def process_message(update):
         producto = orders[user_id]["producto"]
         save_orders(orders)
 
+        # --- RESPUESTA INMEDIATA AL CLIENTE (No espera a la alerta del dueño) ---
         send_telegram(chat_id,
-            f"🎉 ¡Pedido listo!\nProducto: {producto}\nTeléfono: {phone}\n📍 Retiro: {DIRECCION}\n\nPronto te contactaré."
+            f"✅ ¡Gracias, {message['from'].get('first_name', 'cliente')}!\n\n"
+            "Tu pedido ha sido recibido. En los próximos minutos te contactaré para confirmar el pago y coordinar la entrega.\n\n"
+            f"🚚 *Delivery en {DIRECCION}*\n"
+            "🙏 ¡Gracias por preferir Marquesas Orangel!"
         )
 
-        alerta = f"¡NUEVO+PEDIDO!%0AProducto: {producto}%0ATeléfono: {phone}%0ACliente: @{message['from'].get('username', 'sin usuario')}"
+        # --- ALERTA PARA EL DUEÑO (WhatsApp + Telegram personal) ---
+        alerta = f"¡NUEVO+PEDIDO!%0AProducto: {producto}%0ATeléfono: {phone}%0ACliente: @{message['from'].get('username', 'sin usuario')}%0AZona: {DIRECCION}"
         send_whatsapp_alert(alerta)
+
+        if CHAT_ID_DUENO:
+            try:
+                send_telegram(CHAT_ID_DUENO,
+                    f"🛎️ NUEVO PEDIDO\n{producto}\nTeléfono: {phone}\nCliente: @{message['from'].get('username', 'sin usuario')}\n📍 {DIRECCION}"
+                )
+            except:
+                pass
         return
 
     send_telegram(chat_id, "📌 Usa /menu para ver los productos.")
