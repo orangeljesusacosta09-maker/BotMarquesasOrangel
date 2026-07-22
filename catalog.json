@@ -5,4 +5,4 @@
   { "id": 4, "nombre": "Marquesa de Limón", "gramos": "250g", "precio": "3.5 Bs", "imagen": "images/marquesa_de_limon_250g_3.5_BCV.webp" },
   { "id": 5, "nombre": "Marquesa de Parchita", "gramos": "140g", "precio": "2.2 Bs", "imagen": "images/marquesa_de_parchita_140g_2.2_BCV.webp" },
   { "id": 6, "nombre": "Marquesa de Parchita", "gramos": "250g", "precio": "3.5 Bs", "imagen": "images/marquesa_de_parchita_250g_3.5_BCV.webp" }
-]
+]  { "id": 7, "nombre": "PROMO: 3 Vasitos Pequeños (140g)", "gramos": "3x140g", "precio": "5.0 Bs", "imagen": "images/promo_3vasitos.jpg" }
