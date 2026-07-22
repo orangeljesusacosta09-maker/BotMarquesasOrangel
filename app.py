@@ -78,7 +78,7 @@ def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
         send_telegram(chat_id, caption)
 
 # ============================
-# FUNCIÓN WHATSAPP CON MENSAJE MUY CORTO Y SIMPLE
+# FUNCIÓN WHATSAPP (MENSAJE CORTO Y SIN CARACTERES ESPECIALES)
 # ============================
 def send_whatsapp_alert(producto, telefono, cliente):
     """
@@ -91,18 +91,14 @@ def send_whatsapp_alert(producto, telefono, cliente):
         logging.error("❌ MI_NUMERO_WHATSAPP no está definida")
         return
 
-    # Limpiar número destino (el del dueño)
     numero_limpio = MI_NUMERO_WHATSAPP.replace(" ", "").replace("-", "").replace("+", "")
     if not numero_limpio.isdigit():
         logging.error(f"❌ Número inválido: {numero_limpio}")
         return
 
-    # 🔥 MENSAJE CORTO: solo lo esencial, sin caracteres especiales
-    # Tomamos solo los primeros 30 caracteres del producto
+    # Mensaje corto y sin caracteres especiales
     producto_corto = producto[:30]
     mensaje_texto = f"Nuevo pedido. Producto: {producto_corto}. Tel: {telefono}. Cliente: {cliente}"
-    
-    # Codificar solo espacios y caracteres seguros
     mensaje_codificado = quote(mensaje_texto, safe='')
     
     url = f"https://api.callmebot.com/whatsapp.php?phone={numero_limpio}&text={mensaje_codificado}&apikey={CALLMEBOT_API_KEY}"
@@ -137,18 +133,15 @@ def process_message(update):
 
     logging.info(f"📩 Mensaje de {username} (ID:{user_id}): '{text}'")
 
-    # Cargar pedidos
     orders = load_orders()
     logging.info(f"📋 orders actual: {orders}")
 
     # ============================================
     # 1. CAPTURA DE TELÉFONO (PRIORIDAD MÁXIMA)
     # ============================================
-    # Verificar si el usuario está en estado esperando_telefono
     user_order = orders.get(user_id)
     if user_order and user_order.get("estado") == "esperando_telefono":
         phone = text
-        # Limpiar número
         phone_clean = phone.replace("+", "").replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
         if not phone_clean.isdigit() or len(phone_clean) < 10:
             send_telegram(chat_id, "📱 Por favor, envía un número de WhatsApp válido (ej: 0412-1234567).")
@@ -160,10 +153,14 @@ def process_message(update):
         producto = orders[user_id]["producto"]
         save_orders(orders)
 
+        # 🔥 MENSAJE DE AGRADECIMIENTO CON MENCIÓN EXPLÍCITA DE ESPERA
         send_telegram(chat_id,
             f"✅ ¡Gracias, {first_name}!\n\n"
-            "Tu pedido ha sido recibido. En los próximos minutos te contactaré para coordinar el pago y la entrega.\n\n"
-            f"🚚 *Delivery en {DIRECCION}*\n🙏 ¡Gracias por preferir {NOMBRE_NEGOCIO}!"
+            "Tu pedido ha sido recibido y está en proceso.\n"
+            "En los próximos **1 o 2 minutos** recibirás un mensaje de confirmación en tu WhatsApp.\n"
+            "Por favor, **espera** y no envíes más mensajes mientras se procesa.\n\n"
+            f"🚚 *Delivery en {DIRECCION}*\n"
+            f"🙏 ¡Gracias por preferir {NOMBRE_NEGOCIO}!"
         )
 
         # --- ALERTA AL DUEÑO (WhatsApp) ---
@@ -210,7 +207,6 @@ def process_message(update):
         catalog = load_catalog()
         if 1 <= num <= len(catalog):
             product = catalog[num-1]
-            # Guardar estado
             if user_id not in orders:
                 orders[user_id] = {}
             orders[user_id]["producto"] = f"{product['nombre']} - {product['gramos']} ({product['precio']})"
