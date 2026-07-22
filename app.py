@@ -78,15 +78,43 @@ def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
 def send_whatsapp_alert(producto, telefono, cliente):
     """
     Envía un mensaje CORTO y SIMPLE a WhatsApp usando CallMeBot.
-    Esto evita el error 403 por mensajes largos o caracteres especiales.
+    Incluye User-Agent de navegador para evitar bloqueo.
     """
-    # Verificar credenciales
     if not CALLMEBOT_API_KEY:
         logging.error("❌ CALLMEBOT_API_KEY no está definida")
         return
     if not MI_NUMERO_WHATSAPP:
         logging.error("❌ MI_NUMERO_WHATSAPP no está definida")
         return
+
+    numero_limpio = MI_NUMERO_WHATSAPP.replace(" ", "").replace("-", "").replace("+", "")
+    if not numero_limpio.isdigit():
+        logging.error(f"❌ Número inválido: {numero_limpio}")
+        return
+
+    producto_corto = producto[:40]
+    mensaje_texto = f"Nuevo pedido. Producto: {producto_corto}. Tel: {telefono}. Cliente: {cliente}"
+    mensaje_codificado = quote(mensaje_texto, safe='')
+    url = f"https://api.callmebot.com/whatsapp.php?phone={numero_limpio}&text={mensaje_codificado}&apikey={CALLMEBOT_API_KEY}"
+
+    # ⭐ CABECERA CON USER-AGENT DE CHROME (ESENCIAL)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
+    logging.info(f"📤 URL COMPLETA (con User-Agent): {url}")
+
+    try:
+        resp = requests.get(url, headers=headers, timeout=30)
+        logging.info(f"✅ Código HTTP: {resp.status_code}")
+        logging.info(f"📄 Respuesta: {resp.text[:200]}")
+        
+        if resp.status_code == 200 and ("queued" in resp.text.lower() or "success" in resp.text.lower()):
+            logging.info("✅ Mensaje encolado correctamente (llegará en 1-2 minutos)")
+        else:
+            logging.warning(f"⚠️ Respuesta inesperada: {resp.text}")
+    except Exception as e:
+        logging.error(f"❌ Error: {e}")
 
     # Limpiar número (eliminar espacios, guiones, etc.)
     numero_limpio = MI_NUMERO_WHATSAPP.replace(" ", "").replace("-", "").replace("+", "")
