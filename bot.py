@@ -4,13 +4,15 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 import requests
+import time
+import sys
 
 # --- CONFIGURACIÓN ---
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-CHAT_ID_DUENO = os.environ.get("TELEGRAM_CHAT_ID_DUENO")  # Tu ID de Telegram personal
+CHAT_ID_DUENO = os.environ.get("TELEGRAM_CHAT_ID_DUENO")
 CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
-MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")  # Ej: 584141234567
-DIRECCION = "Oropeza Castillo"
+MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
+DIRECCION = "Oropeza Castillo, [Pon aquí tu calle y número de casa]"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
 
 # --- LEER CATÁLOGO ---
@@ -38,6 +40,7 @@ def send_whatsapp_alert(mensaje):
     url = f"https://api.callmebot.com/whatsapp.php?phone={MI_NUMERO_WHATSAPP}&text={mensaje}&apikey={CALLMEBOT_API_KEY}"
     try:
         requests.get(url)
+        print("Alerta enviada a WhatsApp")
     except Exception as e:
         print(f"Error enviando WhatsApp: {e}")
 
@@ -47,7 +50,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🍰 ¡Bienvenido a {NOMBRE_NEGOCIO}!\n\n"
         "Aquí puedes pedir tus marquesas favoritas.\n"
         "Envía /menu para ver el catálogo con precios y fotos.\n\n"
-        "⚠️ *Importante:* El retiro es SOLO en Oropeza Castillo (sin delivery)."
+        "⚠️ *Importante:* El retiro es SOLO en Oropeza Castillo (sin delivery).",
+        parse_mode="Markdown"
     )
 
 # --- COMANDO /MENU ---
@@ -81,7 +85,6 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ Producto no encontrado.")
         return
 
-    # Guardar el pedido en "estado esperando telefono"
     orders = load_orders()
     user_id = str(update.effective_user.id)
     
@@ -97,7 +100,8 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Has seleccionado: *{product['nombre']}* ({product['gramos']})\n"
         f"Precio: {product['precio']}\n\n"
         "📍 *Retiro:* Oropeza Castillo (sin delivery).\n"
-        "📱 Para finalizar, envíame *tu número de WhatsApp* (ej: 0414-1234567) y te contactaré para coordinar el pago y la entrega."
+        "📱 Para finalizar, envíame *tu número de WhatsApp* (ej: 0414-1234567) y te contactaré para coordinar el pago y la entrega.",
+        parse_mode="Markdown"
     )
 
 # --- RECIBIR EL NÚMERO DE TELÉFONO ---
@@ -110,13 +114,11 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Primero elige un producto con /menu")
         return
 
-    # Guardar teléfono y completar pedido
     orders[user_id]["telefono"] = phone
     orders[user_id]["estado"] = "completado"
     producto = orders[user_id]["producto"]
     save_orders(orders)
 
-    # Responder al cliente
     await update.message.reply_text(
         f"🎉 ¡Pedido listo!\n\n"
         f"Producto: {producto}\n"
@@ -125,11 +127,9 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Pronto te escribiré para confirmar el pago. ¡Gracias!"
     )
 
-    # --- ALERTA AL DUEÑO (TE LLEGA A TU WHATSAPP) ---
     alerta = f"¡NUEVO+PEDIDO!%0AProducto: {producto}%0ATeléfono: {phone}%0ACliente: @{update.effective_user.username or 'sin usuario'}"
     send_whatsapp_alert(alerta)
     
-    # También enviar mensaje a Telegram personal del dueño (por si acaso)
     if CHAT_ID_DUENO:
         try:
             await context.bot.send_message(
@@ -153,11 +153,18 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", menu))
     app.add_handler(CallbackQueryHandler(button_click, pattern="^select_"))
-    app.add_handler(MessageHandler(filters.Regex(r'^\d'), handle_phone))  # Captura números
+    app.add_handler(MessageHandler(filters.Regex(r'^\d'), handle_phone))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, fallback))
     
-    print("Bot iniciado...")
-    app.run_polling()
+    print("Bot iniciado, escuchando por 30 segundos...")
+    # ¡Esta es la clave! Solo corre por 30 segundos y luego termina
+    app.run_polling(timeout=10, drop_pending_updates=True, allowed_updates=None, close_loop=False)
+    
+    # Forzar cierre después de 30 segundos
+    time.sleep(30)
+    print("Tiempo cumplido, cerrando...")
+    app.stop()
+    sys.exit(0)
 
 if __name__ == "__main__":
-    main() 
+    main()
