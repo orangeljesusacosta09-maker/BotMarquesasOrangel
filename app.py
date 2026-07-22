@@ -73,9 +73,13 @@ def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
         send_telegram(chat_id, caption)
 
 # ============================
-# FUNCIÓN WHATSAPP CORREGIDA
+# NUEVA FUNCIÓN WHATSAPP CON MENSAJE CORTO (SOLUCIÓN DEFINITIVA)
 # ============================
-def send_whatsapp_alert(mensaje):
+def send_whatsapp_alert(producto, telefono, cliente):
+    """
+    Envía un mensaje CORTO y SIMPLE a WhatsApp usando CallMeBot.
+    Esto evita el error 403 por mensajes largos o caracteres especiales.
+    """
     # Verificar credenciales
     if not CALLMEBOT_API_KEY:
         logging.error("❌ CALLMEBOT_API_KEY no está definida")
@@ -90,12 +94,18 @@ def send_whatsapp_alert(mensaje):
         logging.error(f"❌ Número inválido: {numero_limpio}")
         return
 
-    # Codificar mensaje
-    mensaje_codificado = quote(mensaje, safe='')  # Codifica TODOS los caracteres especiales
+    # 🔥 MENSAJE CORTO: Solo lo esencial (sin $, sin paréntesis, sin @ adicionales)
+    # Tomamos solo los primeros 40 caracteres del producto para evitar largos
+    producto_corto = producto[:40]
+    mensaje_texto = f"Nuevo pedido. Producto: {producto_corto}. Tel: {telefono}. Cliente: {cliente}"
+    
+    # Codificar el mensaje (los espacios se convierten en %20)
+    mensaje_codificado = quote(mensaje_texto, safe='')
+    
+    # Construir la URL
     url = f"https://api.callmebot.com/whatsapp.php?phone={numero_limpio}&text={mensaje_codificado}&apikey={CALLMEBOT_API_KEY}"
 
-    # LOG DE LA URL COMPLETA
-    logging.info(f"📤 URL COMPLETA: {url}")
+    logging.info(f"📤 URL COMPLETA (mensaje corto): {url}")
 
     try:
         resp = requests.get(url, timeout=30)
@@ -103,7 +113,7 @@ def send_whatsapp_alert(mensaje):
         logging.info(f"📄 Respuesta: {resp.text[:200]}")
         
         if resp.status_code == 200 and ("queued" in resp.text.lower() or "success" in resp.text.lower()):
-            logging.info("✅ Mensaje encolado correctamente")
+            logging.info("✅ Mensaje encolado correctamente (llegará en 1-2 minutos)")
         else:
             logging.warning(f"⚠️ Respuesta inesperada: {resp.text}")
     except Exception as e:
@@ -151,10 +161,9 @@ def process_message(update):
             f"🚚 *Delivery en {DIRECCION}*\n🙏 ¡Gracias por preferir {NOMBRE_NEGOCIO}!"
         )
 
-        # --- ALERTA AL DUEÑO ---
-        alerta = f"¡NUEVO PEDIDO! Producto: {producto} Teléfono: {phone} Cliente: @{username}"
-        logging.info(f"📢 Enviando alerta: {alerta}")
-        send_whatsapp_alert(alerta)
+        # --- ALERTA AL DUEÑO (WhatsApp + Telegram) ---
+        # Llamamos a la función con los datos separados para que genere un mensaje corto
+        send_whatsapp_alert(producto, phone, username)
 
         if CHAT_ID_DUENO:
             try:
