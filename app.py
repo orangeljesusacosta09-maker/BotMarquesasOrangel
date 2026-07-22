@@ -35,13 +35,18 @@ def load_orders():
     try:
         with open(ORDERS_FILE, "r") as f:
             return json.load(f)
-    except:
+    except FileNotFoundError:
+        logging.warning("orders.json no encontrado, se creará uno nuevo")
+        return {}
+    except json.JSONDecodeError:
+        logging.error("orders.json corrupto, se reiniciará")
         return {}
 
 def save_orders(orders):
     try:
         with open(ORDERS_FILE, "w") as f:
             json.dump(orders, f, indent=2)
+        logging.info(f"✅ orders.json guardado correctamente")
     except Exception as e:
         logging.error(f"Error guardando orders.json: {e}")
 
@@ -73,12 +78,11 @@ def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
         send_telegram(chat_id, caption)
 
 # ============================
-# NUEVA FUNCIÓN WHATSAPP CON MENSAJE CORTO (SOLUCIÓN DEFINITIVA)
+# FUNCIÓN WHATSAPP CON MENSAJE MUY CORTO Y SIMPLE
 # ============================
 def send_whatsapp_alert(producto, telefono, cliente):
     """
-    Envía un mensaje CORTO y SIMPLE a WhatsApp usando CallMeBot.
-    Incluye User-Agent de navegador para evitar bloqueo.
+    Envía un mensaje corto y sin caracteres especiales para evitar error 403.
     """
     if not CALLMEBOT_API_KEY:
         logging.error("❌ CALLMEBOT_API_KEY no está definida")
@@ -87,61 +91,30 @@ def send_whatsapp_alert(producto, telefono, cliente):
         logging.error("❌ MI_NUMERO_WHATSAPP no está definida")
         return
 
+    # Limpiar número destino (el del dueño)
     numero_limpio = MI_NUMERO_WHATSAPP.replace(" ", "").replace("-", "").replace("+", "")
     if not numero_limpio.isdigit():
         logging.error(f"❌ Número inválido: {numero_limpio}")
         return
 
-    producto_corto = producto[:40]
-    mensaje_texto = f"Nuevo pedido. Producto: {producto_corto}. Tel: {telefono}. Cliente: {cliente}"
-    mensaje_codificado = quote(mensaje_texto, safe='')
-    url = f"https://api.callmebot.com/whatsapp.php?phone={numero_limpio}&text={mensaje_codificado}&apikey={CALLMEBOT_API_KEY}"
-
-    # ⭐ CABECERA CON USER-AGENT DE CHROME (ESENCIAL)
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-
-    logging.info(f"📤 URL COMPLETA (con User-Agent): {url}")
-
-    try:
-        resp = requests.get(url, headers=headers, timeout=30)
-        logging.info(f"✅ Código HTTP: {resp.status_code}")
-        logging.info(f"📄 Respuesta: {resp.text[:200]}")
-        
-        if resp.status_code == 200 and ("queued" in resp.text.lower() or "success" in resp.text.lower()):
-            logging.info("✅ Mensaje encolado correctamente (llegará en 1-2 minutos)")
-        else:
-            logging.warning(f"⚠️ Respuesta inesperada: {resp.text}")
-    except Exception as e:
-        logging.error(f"❌ Error: {e}")
-
-    # Limpiar número (eliminar espacios, guiones, etc.)
-    numero_limpio = MI_NUMERO_WHATSAPP.replace(" ", "").replace("-", "").replace("+", "")
-    if not numero_limpio.isdigit():
-        logging.error(f"❌ Número inválido: {numero_limpio}")
-        return
-
-    # 🔥 MENSAJE CORTO: Solo lo esencial (sin $, sin paréntesis, sin @ adicionales)
-    # Tomamos solo los primeros 40 caracteres del producto para evitar largos
-    producto_corto = producto[:40]
+    # 🔥 MENSAJE CORTO: solo lo esencial, sin caracteres especiales
+    # Tomamos solo los primeros 30 caracteres del producto
+    producto_corto = producto[:30]
     mensaje_texto = f"Nuevo pedido. Producto: {producto_corto}. Tel: {telefono}. Cliente: {cliente}"
     
-    # Codificar el mensaje (los espacios se convierten en %20)
+    # Codificar solo espacios y caracteres seguros
     mensaje_codificado = quote(mensaje_texto, safe='')
     
-    # Construir la URL
     url = f"https://api.callmebot.com/whatsapp.php?phone={numero_limpio}&text={mensaje_codificado}&apikey={CALLMEBOT_API_KEY}"
 
-    logging.info(f"📤 URL COMPLETA (mensaje corto): {url}")
+    logging.info(f"📤 URL WHATSAPP: {url}")
 
     try:
         resp = requests.get(url, timeout=30)
         logging.info(f"✅ Código HTTP: {resp.status_code}")
         logging.info(f"📄 Respuesta: {resp.text[:200]}")
-        
         if resp.status_code == 200 and ("queued" in resp.text.lower() or "success" in resp.text.lower()):
-            logging.info("✅ Mensaje encolado correctamente (llegará en 1-2 minutos)")
+            logging.info("✅ Mensaje encolado correctamente (llegará en 1-2 min)")
         else:
             logging.warning(f"⚠️ Respuesta inesperada: {resp.text}")
     except Exception as e:
@@ -164,13 +137,16 @@ def process_message(update):
 
     logging.info(f"📩 Mensaje de {username} (ID:{user_id}): '{text}'")
 
+    # Cargar pedidos
+    orders = load_orders()
+    logging.info(f"📋 orders actual: {orders}")
+
     # ============================================
     # 1. CAPTURA DE TELÉFONO (PRIORIDAD MÁXIMA)
     # ============================================
-    orders = load_orders()
-    logging.info(f"🔍 Estado actual de orders para {user_id}: {orders.get(user_id, {})}")
-
-    if user_id in orders and orders[user_id].get("estado") == "esperando_telefono":
+    # Verificar si el usuario está en estado esperando_telefono
+    user_order = orders.get(user_id)
+    if user_order and user_order.get("estado") == "esperando_telefono":
         phone = text
         # Limpiar número
         phone_clean = phone.replace("+", "").replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
@@ -178,6 +154,7 @@ def process_message(update):
             send_telegram(chat_id, "📱 Por favor, envía un número de WhatsApp válido (ej: 0412-1234567).")
             return
 
+        # Guardar pedido completado
         orders[user_id]["telefono"] = phone
         orders[user_id]["estado"] = "completado"
         producto = orders[user_id]["producto"]
@@ -189,10 +166,10 @@ def process_message(update):
             f"🚚 *Delivery en {DIRECCION}*\n🙏 ¡Gracias por preferir {NOMBRE_NEGOCIO}!"
         )
 
-        # --- ALERTA AL DUEÑO (WhatsApp + Telegram) ---
-        # Llamamos a la función con los datos separados para que genere un mensaje corto
+        # --- ALERTA AL DUEÑO (WhatsApp) ---
         send_whatsapp_alert(producto, phone, username)
 
+        # --- ALERTA AL DUEÑO (Telegram) ---
         if CHAT_ID_DUENO:
             try:
                 send_telegram(CHAT_ID_DUENO,
@@ -233,7 +210,7 @@ def process_message(update):
         catalog = load_catalog()
         if 1 <= num <= len(catalog):
             product = catalog[num-1]
-            orders = load_orders()
+            # Guardar estado
             if user_id not in orders:
                 orders[user_id] = {}
             orders[user_id]["producto"] = f"{product['nombre']} - {product['gramos']} ({product['precio']})"
