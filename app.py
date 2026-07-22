@@ -73,42 +73,41 @@ def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
         send_telegram(chat_id, caption)
 
 # ============================
-# FUNCIÓN WHATSAPP CORREGIDA (VERSIÓN DEFINITIVA)
+# FUNCIÓN WHATSAPP CORREGIDA
 # ============================
 def send_whatsapp_alert(mensaje):
     # Verificar credenciales
     if not CALLMEBOT_API_KEY:
-        logging.error("❌ CALLMEBOT_API_KEY no está definida en las variables de entorno")
+        logging.error("❌ CALLMEBOT_API_KEY no está definida")
         return
     if not MI_NUMERO_WHATSAPP:
-        logging.error("❌ MI_NUMERO_WHATSAPP no está definida en las variables de entorno")
+        logging.error("❌ MI_NUMERO_WHATSAPP no está definida")
         return
 
-    # Codificar el mensaje para URL
-    mensaje_codificado = quote(mensaje)
-    url = f"https://api.callmebot.com/whatsapp.php?phone={MI_NUMERO_WHATSAPP}&text={mensaje_codificado}&apikey={CALLMEBOT_API_KEY}"
+    # Limpiar número (eliminar espacios, guiones, etc.)
+    numero_limpio = MI_NUMERO_WHATSAPP.replace(" ", "").replace("-", "").replace("+", "")
+    if not numero_limpio.isdigit():
+        logging.error(f"❌ Número inválido: {numero_limpio}")
+        return
 
-    # ⭐ LOG DE LA URL COMPLETA (SIN TRUNCAR)
-    logging.info(f"📤 URL COMPLETA GENERADA POR EL BOT: {url}")
-    logging.info(f"📤 Enviando WhatsApp a {MI_NUMERO_WHATSAPP}")
+    # Codificar mensaje
+    mensaje_codificado = quote(mensaje, safe='')  # Codifica TODOS los caracteres especiales
+    url = f"https://api.callmebot.com/whatsapp.php?phone={numero_limpio}&text={mensaje_codificado}&apikey={CALLMEBOT_API_KEY}"
+
+    # LOG DE LA URL COMPLETA
+    logging.info(f"📤 URL COMPLETA: {url}")
 
     try:
-        # Aumentar timeout a 30 segundos
         resp = requests.get(url, timeout=30)
-        logging.info(f"✅ Código de respuesta HTTP: {resp.status_code}")
+        logging.info(f"✅ Código HTTP: {resp.status_code}")
+        logging.info(f"📄 Respuesta: {resp.text[:200]}")
         
-        # ⭐ LOG DE LA RESPUESTA COMPLETA (SIN TRUNCAR)
-        logging.info(f"📄 Respuesta COMPLETA de CallMeBot: {resp.text}")
-        
-        # ⭐ CORREGIDO: Aceptar "queued" como éxito
         if resp.status_code == 200 and ("queued" in resp.text.lower() or "success" in resp.text.lower()):
-            logging.info("✅ Alerta WhatsApp encolada correctamente (llegará en 1-2 minutos)")
+            logging.info("✅ Mensaje encolado correctamente")
         else:
-            logging.warning(f"⚠️ La respuesta no indica éxito: {resp.text}")
-    except requests.exceptions.Timeout:
-        logging.error("❌ Timeout: CallMeBot tardó más de 30 segundos en responder")
+            logging.warning(f"⚠️ Respuesta inesperada: {resp.text}")
     except Exception as e:
-        logging.error(f"❌ Error de conexión o excepción: {e}")
+        logging.error(f"❌ Error: {e}")
 
 # ============================
 # PROCESAMIENTO DE MENSAJES
@@ -128,11 +127,14 @@ def process_message(update):
     logging.info(f"📩 Mensaje de {username} (ID:{user_id}): '{text}'")
 
     # ============================================
-    # 1. CAPTURA DE TELÉFONO
+    # 1. CAPTURA DE TELÉFONO (PRIORIDAD MÁXIMA)
     # ============================================
     orders = load_orders()
+    logging.info(f"🔍 Estado actual de orders para {user_id}: {orders.get(user_id, {})}")
+
     if user_id in orders and orders[user_id].get("estado") == "esperando_telefono":
         phone = text
+        # Limpiar número
         phone_clean = phone.replace("+", "").replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
         if not phone_clean.isdigit() or len(phone_clean) < 10:
             send_telegram(chat_id, "📱 Por favor, envía un número de WhatsApp válido (ej: 0412-1234567).")
@@ -149,7 +151,7 @@ def process_message(update):
             f"🚚 *Delivery en {DIRECCION}*\n🙏 ¡Gracias por preferir {NOMBRE_NEGOCIO}!"
         )
 
-        # --- ALERTA AL DUEÑO (WhatsApp + Telegram) ---
+        # --- ALERTA AL DUEÑO ---
         alerta = f"¡NUEVO PEDIDO! Producto: {producto} Teléfono: {phone} Cliente: @{username}"
         logging.info(f"📢 Enviando alerta: {alerta}")
         send_whatsapp_alert(alerta)
@@ -200,6 +202,7 @@ def process_message(update):
             orders[user_id]["producto"] = f"{product['nombre']} - {product['gramos']} ({product['precio']})"
             orders[user_id]["estado"] = "esperando_telefono"
             save_orders(orders)
+            logging.info(f"✅ Estado guardado para {user_id}: {orders[user_id]}")
 
             caption = (f"✅ *Elegiste:* {product['nombre']} ({product['gramos']})\n"
                        f"💰 *Precio:* {product['precio']}\n\n"
