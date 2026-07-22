@@ -3,7 +3,7 @@ import json
 import logging
 import requests
 from flask import Flask, request, jsonify
-from urllib.parse import quote  # <-- Importante para codificar el mensaje
+from urllib.parse import quote
 
 # ============================
 # CONFIGURACIÓN
@@ -73,7 +73,7 @@ def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
         send_telegram(chat_id, caption)
 
 # ============================
-# FUNCIÓN MEJORADA PARA WHATSAPP
+# FUNCIÓN WHATSAPP CORREGIDA (VERSIÓN DEFINITIVA)
 # ============================
 def send_whatsapp_alert(mensaje):
     # Verificar credenciales
@@ -84,23 +84,31 @@ def send_whatsapp_alert(mensaje):
         logging.error("❌ MI_NUMERO_WHATSAPP no está definida en las variables de entorno")
         return
 
-    # Codificar el mensaje para URL (espacios, tildes, etc.)
+    # Codificar el mensaje para URL
     mensaje_codificado = quote(mensaje)
     url = f"https://api.callmebot.com/whatsapp.php?phone={MI_NUMERO_WHATSAPP}&text={mensaje_codificado}&apikey={CALLMEBOT_API_KEY}"
 
+    # ⭐ LOG DE LA URL COMPLETA (SIN TRUNCAR)
+    logging.info(f"📤 URL COMPLETA GENERADA POR EL BOT: {url}")
     logging.info(f"📤 Enviando WhatsApp a {MI_NUMERO_WHATSAPP}")
-    logging.info(f"📤 URL: {url[:100]}...")  # Mostrar parte de la URL para depurar
 
     try:
-        resp = requests.get(url, timeout=10)
-        logging.info(f"✅ Respuesta de CallMeBot: Código {resp.status_code}")
-        logging.info(f"📄 Contenido: {resp.text[:200]}")
-        if resp.status_code == 200 and "success" in resp.text.lower():
-            logging.info("✅ Alerta WhatsApp enviada con éxito")
+        # Aumentar timeout a 30 segundos
+        resp = requests.get(url, timeout=30)
+        logging.info(f"✅ Código de respuesta HTTP: {resp.status_code}")
+        
+        # ⭐ LOG DE LA RESPUESTA COMPLETA (SIN TRUNCAR)
+        logging.info(f"📄 Respuesta COMPLETA de CallMeBot: {resp.text}")
+        
+        # ⭐ CORREGIDO: Aceptar "queued" como éxito
+        if resp.status_code == 200 and ("queued" in resp.text.lower() or "success" in resp.text.lower()):
+            logging.info("✅ Alerta WhatsApp encolada correctamente (llegará en 1-2 minutos)")
         else:
             logging.warning(f"⚠️ La respuesta no indica éxito: {resp.text}")
+    except requests.exceptions.Timeout:
+        logging.error("❌ Timeout: CallMeBot tardó más de 30 segundos en responder")
     except Exception as e:
-        logging.error(f"❌ Error enviando WhatsApp: {e}")
+        logging.error(f"❌ Error de conexión o excepción: {e}")
 
 # ============================
 # PROCESAMIENTO DE MENSAJES
