@@ -31,12 +31,13 @@ def main():
     index = (day - 1) % len(catalog)
     product = catalog[index]
     
-    mensaje = (
-        f"🍰 *Promoción del día de {NOMBRE_NEGOCIO}*\n\n"
-        f"Hoy destacamos: *{product['nombre']}* ({product['gramos']})\n"
-        f"💰 Precio: {product['precio']}\n"
-        f"📍 Retiro en Oropeza Castillo.\n\n"
-        f"📲 ¡Pídelo ya! Escribe /menu en nuestro bot de Telegram."
+   mensaje = (
+    f"🍰 *Promoción del día de {NOMBRE_NEGOCIO}*\n\n"
+    f"Hoy destacamos: *{product['nombre']}* ({product['gramos']})\n"
+    f"💰 Precio: {product['precio']}\n"
+    f"🚚 *Delivery en Oropeza Castillo*\n\n"
+    f"📲 ¡Pídelo ya! Escribe /menu en nuestro bot de Telegram."
+)
     )
     
     if CHANNEL_ID:
