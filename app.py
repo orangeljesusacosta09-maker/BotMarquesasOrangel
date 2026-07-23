@@ -21,8 +21,7 @@ MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
 SECRET_KEY = os.environ.get("SECRET_KEY", "clave_por_defecto_cambiala")
 
 # ✅ NUEVA URL DE GOOGLE SHEETS (actualizada)
-GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyCj9l4vTeYNNOHnz8U_ajkuIimOsYpckhcTAbVm1se_XuwJJ1OBGNoRkeM3dsHZQL8TA/exec"
-
+GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbxAEzTEic3Ch5zreUUT-vtahopv-KHZRtSQRm0Qc4bWj8KYsB0gi6zuTDnAwLfj47hOEw/exec"
 DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
 ORDERS_FILE = "orders.json"
