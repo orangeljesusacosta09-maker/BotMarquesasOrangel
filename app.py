@@ -18,10 +18,11 @@ CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
 MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
 
 # 🔐 CLAVE SECRETA (DEBE COINCIDIR CON LA DE APPS SCRIPT)
-SECRET_KEY = os.environ.get("SECRET_KEY", "clave_por_defecto_cambiala")
+SECRET_KEY = os.environ.get("SECRET_KEY", "Marquesas2026!Segura")
 
-# ✅ URL DE GOOGLE SHEETS (ACTUALIZADA CON LA NUEVA QUE ME DISTE)
-https://script.google.com/macros/s/AKfycbxp_ZK2aTFBQ3cSl4Kx-MdyRfXBeNS07kXwOYBIvCi1UkUFSvf8slj4hkTICKi2mKHJqg/exec
+# ✅ URL DEFINITIVA DE GOOGLE SHEETS (CON EL ID QUE ME DISTE)
+GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbxp_ZK2aTFBQ3cSl4Kx-MdyRfXBeNS07kXwOYBIvCi1UkUFSvf8slj4hkTICKi2mKHJqg/exec"
+
 DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
 ORDERS_FILE = "orders.json"
@@ -42,10 +43,8 @@ def load_orders():
         with open(ORDERS_FILE, "r") as f:
             return json.load(f)
     except FileNotFoundError:
-        logging.warning("orders.json no encontrado, se creará uno nuevo")
         return {}
     except json.JSONDecodeError:
-        logging.error("orders.json corrupto, se reiniciará")
         return {}
 
 def save_orders(orders):
@@ -69,14 +68,24 @@ def send_telegram(chat_id, text, parse_mode="Markdown"):
         logging.error(f"Excepción enviando mensaje: {e}")
 
 def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+    """
+    Envía una foto por Telegram. Si no encuentra el archivo, envía solo el texto.
+    """
     try:
+        # Verificar si el archivo existe
+        if not os.path.isfile(photo_path):
+            logging.warning(f"⚠️ Foto no encontrada: {photo_path}. Enviando solo texto.")
+            send_telegram(chat_id, caption)
+            return
+
+        url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
         with open(photo_path, 'rb') as photo_file:
             files = {'photo': photo_file}
             data = {'chat_id': chat_id, 'caption': caption, 'parse_mode': parse_mode}
             resp = requests.post(url, files=files, data=data)
             if resp.status_code != 200:
                 logging.error(f"Error enviando foto: {resp.text}")
+                send_telegram(chat_id, caption)
             else:
                 logging.info(f"Foto enviada a {chat_id}")
     except Exception as e:
@@ -87,11 +96,8 @@ def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
 # FUNCIÓN WHATSAPP (MENSAJE CORTO)
 # ============================
 def send_whatsapp_alert(producto, telefono, cliente):
-    if not CALLMEBOT_API_KEY:
-        logging.error("❌ CALLMEBOT_API_KEY no está definida")
-        return
-    if not MI_NUMERO_WHATSAPP:
-        logging.error("❌ MI_NUMERO_WHATSAPP no está definida")
+    if not CALLMEBOT_API_KEY or not MI_NUMERO_WHATSAPP:
+        logging.error("❌ Faltan credenciales de WhatsApp")
         return
 
     numero_limpio = MI_NUMERO_WHATSAPP.replace(" ", "").replace("-", "").replace("+", "")
@@ -107,14 +113,12 @@ def send_whatsapp_alert(producto, telefono, cliente):
     logging.info(f"📤 URL WHATSAPP: {url}")
     try:
         resp = requests.get(url, timeout=30)
-        logging.info(f"✅ Código HTTP: {resp.status_code}")
-        logging.info(f"📄 Respuesta: {resp.text[:200]}")
         if resp.status_code == 200 and ("queued" in resp.text.lower() or "success" in resp.text.lower()):
             logging.info("✅ Mensaje encolado correctamente (llegará en 1-2 min)")
         else:
             logging.warning(f"⚠️ Respuesta inesperada: {resp.text}")
     except Exception as e:
-        logging.error(f"❌ Error: {e}")
+        logging.error(f"❌ Error enviando WhatsApp: {e}")
 
 # ============================
 # FUNCIÓN PARA REGISTRAR EN GOOGLE SHEETS
@@ -146,7 +150,6 @@ def registrar_venta_en_sheets(producto, telefono, cliente):
 def process_message(update):
     message = update.get("message")
     if not message:
-        logging.warning("Mensaje sin campo 'message'")
         return
 
     chat_id = message["chat"]["id"]
@@ -158,13 +161,11 @@ def process_message(update):
     logging.info(f"📩 Mensaje de {username} (ID:{user_id}): '{text}'")
 
     orders = load_orders()
-    logging.info(f"📋 orders actual: {orders}")
 
     # ============================================
-    # 1. CAPTURA DE TELÉFONO
+    # 1. CAPTURA DE TELÉFONO (PRIORIDAD MÁXIMA)
     # ============================================
-    user_order = orders.get(user_id)
-    if user_order and user_order.get("estado") == "esperando_telefono":
+    if user_id in orders and orders[user_id].get("estado") == "esperando_telefono":
         phone = text
         phone_clean = phone.replace("+", "").replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
         if not phone_clean.isdigit() or len(phone_clean) < 10:
@@ -216,7 +217,7 @@ def process_message(update):
     if text == "/menu":
         catalog = load_catalog()
         if not catalog:
-            send_telegram(chat_id, "❌ Error al cargar el catálogo. Contacta al administrador.")
+            send_telegram(chat_id, "❌ Error al cargar el catálogo.")
             return
         msg = "📋 *Nuestro Menú:*\n\n"
         for i, item in enumerate(catalog, start=1):
@@ -238,17 +239,13 @@ def process_message(update):
             orders[user_id]["producto"] = f"{product['nombre']} - {product['gramos']} ({product['precio']})"
             orders[user_id]["estado"] = "esperando_telefono"
             save_orders(orders)
-            logging.info(f"✅ Estado guardado para {user_id}: {orders[user_id]}")
 
             caption = (f"✅ *Elegiste:* {product['nombre']} ({product['gramos']})\n"
                        f"💰 *Precio:* {product['precio']}\n\n"
                        f"🚚 *Delivery:* {DIRECCION} (sin costo extra)\n"
                        "📱 Ahora envíame *tu número de WhatsApp* (ej: 0412-1234567).")
-            try:
-                send_photo_telegram(chat_id, product['imagen'], caption)
-            except Exception as e:
-                logging.error(f"Error enviando foto: {e}")
-                send_telegram(chat_id, caption)
+            # Enviar foto (corregido: no falla si no existe)
+            send_photo_telegram(chat_id, product['imagen'], caption)
         else:
             send_telegram(chat_id, "❌ Número inválido. Usa /menu.")
         return
@@ -270,10 +267,7 @@ def webhook():
     try:
         update = request.get_json()
         if update and "message" in update:
-            logging.info("Webhook recibido, procesando mensaje...")
             process_message(update)
-        else:
-            logging.warning("Webhook recibido sin mensaje")
         return "ok", 200
     except Exception as e:
         logging.error(f"Error en webhook: {e}")
