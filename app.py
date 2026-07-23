@@ -17,11 +17,11 @@ CHAT_ID_DUENO = os.environ.get("TELEGRAM_CHAT_ID_DUENO")
 CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
 MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
 
-# 🔐 CLAVE SECRETA PARA GOOGLE SHEETS (se leerá desde variables de entorno en Render)
+# 🔐 CLAVE SECRETA PARA GOOGLE SHEETS (DEBE COINCIDIR CON LA DE APPS SCRIPT)
 SECRET_KEY = os.environ.get("SECRET_KEY", "clave_por_defecto_cambiala")
 
-# URL de Google Sheets (copia la URL que obtuviste de Apps Script)
-GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/TU_CODIGO/exec"  # <-- REEMPLAZA CON TU URL
+# ✅ NUEVA URL DE GOOGLE SHEETS (actualizada)
+GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyCj9l4vTeYNNOHnz8U_ajkuIimOsYpckhcTAbVm1se_XuwJJ1OBGNoRkeM3dsHZQL8TA/exec"
 
 DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
