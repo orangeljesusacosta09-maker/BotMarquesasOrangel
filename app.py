@@ -17,11 +17,13 @@ CHAT_ID_DUENO = os.environ.get("TELEGRAM_CHAT_ID_DUENO")
 CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
 MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
 
-# 🔐 CLAVE SECRETA PARA GOOGLE SHEETS (DEBE COINCIDIR CON LA DE APPS SCRIPT)
+# 🔐 CLAVE SECRETA (DEBE COINCIDIR CON LA DE APPS SCRIPT)
 SECRET_KEY = os.environ.get("SECRET_KEY", "clave_por_defecto_cambiala")
 
-# ✅ NUEVA URL DE GOOGLE SHEETS (actualizada)
-https://script.google.com/macros/s/AKfycbxAEzTEic3Ch5zreUUT-vtahopv-KHZRtSQRm0Qc4bWj8KYsB0gi6zuTDnAwLfj47hOEw/exec
+# ✅ URL DE GOOGLE SHEETS (CORRECTA Y ENTRE COMILLAS)
+GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbxAEzTEic3Ch5zreUUT-vtahopv-KHZRtSQRm0Qc4bWj8KYsB0gi6zuTDnAwLfj47hOEw/exec"
+
+DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
 ORDERS_FILE = "orders.json"
 
@@ -120,7 +122,6 @@ def send_whatsapp_alert(producto, telefono, cliente):
 # ============================
 def registrar_venta_en_sheets(producto, telefono, cliente):
     try:
-        # Extraer precio del producto
         precio_match = re.search(r'\(([^)]+)\)', producto)
         precio = precio_match.group(1) if precio_match else "N/A"
         
@@ -130,7 +131,7 @@ def registrar_venta_en_sheets(producto, telefono, cliente):
             "telefono": telefono,
             "cliente": cliente,
             "estado": "Completado",
-            "secret": SECRET_KEY  # 🔐 Enviamos la clave secreta
+            "secret": SECRET_KEY
         }
         resp = requests.post(GOOGLE_SHEETS_URL, json=data, timeout=10)
         if resp.status_code == 200:
@@ -161,7 +162,7 @@ def process_message(update):
     logging.info(f"📋 orders actual: {orders}")
 
     # ============================================
-    # 1. CAPTURA DE TELÉFONO (PRIORIDAD MÁXIMA)
+    # 1. CAPTURA DE TELÉFONO
     # ============================================
     user_order = orders.get(user_id)
     if user_order and user_order.get("estado") == "esperando_telefono":
@@ -179,7 +180,7 @@ def process_message(update):
         # 🔥 REGISTRAR VENTA EN GOOGLE SHEETS
         registrar_venta_en_sheets(producto, phone, username)
 
-        # Mensaje al cliente con indicación de espera
+        # Mensaje al cliente
         send_telegram(chat_id,
             f"✅ ¡Gracias, {first_name}!\n\n"
             "Tu pedido ha sido recibido y está en proceso.\n"
