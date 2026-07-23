@@ -18,10 +18,7 @@ CHAT_ID_DUENO = os.environ.get("TELEGRAM_CHAT_ID_DUENO")
 CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
 MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
 
-# 🔐 CLAVE SECRETA (DEBE COINCIDIR CON LA DE APPS SCRIPT)
 SECRET_KEY = os.environ.get("SECRET_KEY", "clave_por_defecto_cambiala")
-
-# ✅ URL CORRECTA DE GOOGLE SHEETS (CONFIRMADA)
 GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyEoRuA-EhaaRQdFB6VABTj6WfuApkBi_4YKTUMF5OTQPvn8IglLRCzFdYTC9Td8Wl1Xw/exec"
 
 DIRECCION = "Oropeza Castillo"
@@ -115,17 +112,16 @@ def send_whatsapp_alert(producto, telefono, cliente, tipo_pago, metodo_pago, fec
 
 def registrar_venta_en_sheets(producto, precio, telefono, cliente, tipo_pago, metodo_pago, fecha_vencimiento=None):
     try:
-       data = {
-    "producto": producto,
-    "precio": precio,
-    "telefono": telefono,
-    "cliente": cliente,
-    "estado": "Completado",
-    "tipo_pago": tipo_pago,           # ⭐
-    "fecha_vencimiento": fecha_vencimiento if fecha_vencimiento else "",
-    "metodo_pago": metodo_pago,       # ⭐
-    "secret": SECRET_KEY
-}
+        data = {
+            "producto": producto,
+            "precio": precio,
+            "telefono": telefono,
+            "cliente": cliente,
+            "estado": "Completado",
+            "tipo_pago": tipo_pago,
+            "fecha_vencimiento": fecha_vencimiento if fecha_vencimiento else "",
+            "metodo_pago": metodo_pago,
+            "secret": SECRET_KEY
         }
         resp = requests.post(GOOGLE_SHEETS_URL, json=data, timeout=10)
         if resp.status_code == 200:
