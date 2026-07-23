@@ -20,8 +20,9 @@ MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
 # 🔐 CLAVE SECRETA (DEBE COINCIDIR CON LA DE APPS SCRIPT)
 SECRET_KEY = os.environ.get("SECRET_KEY", "clave_por_defecto_cambiala")
 
-# ✅ URL CORRECTA DE GOOGLE SHEETS (LA QUE ME DISTE)
-https://script.google.com/macros/s/AKfycbzGboXIqBemFZmgaSxSByGjexaz7F7J1RW1Sf329AqfuhnqY1XvzS8Bh3xwEvmeG_YFRg/exec
+# ✅ NUEVA URL DE GOOGLE SHEETS (ACTUALIZADA)
+GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyEoRuA-EhaaRQdFB6VABTj6WfuApkBi_4YKTUMF5OTQPvn8IglLRCzFdYTC9Td8Wl1Xw/exec"
+
 DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
 ORDERS_FILE = "orders.json"
@@ -68,12 +69,8 @@ def send_telegram(chat_id, text, parse_mode="Markdown"):
     except Exception as e:
         logging.error(f"Excepción enviando mensaje: {e}")
 
-# ============================
-# FUNCIÓN PARA ENVIAR FOTO CON MANEJO DE ERRORES (CORREGIDA)
-# ============================
 def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
     try:
-        # Verificar si el archivo existe antes de intentar enviarlo
         if not os.path.exists(photo_path):
             logging.warning(f"⚠️ Foto no encontrada: {photo_path}. Enviando solo texto.")
             send_telegram(chat_id, caption)
@@ -93,9 +90,6 @@ def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
         logging.error(f"Excepción enviando foto: {e}")
         send_telegram(chat_id, caption)
 
-# ============================
-# FUNCIÓN WHATSAPP (MENSAJE CORTO)
-# ============================
 def send_whatsapp_alert(producto, telefono, cliente):
     if not CALLMEBOT_API_KEY:
         logging.error("❌ CALLMEBOT_API_KEY no está definida")
@@ -126,9 +120,6 @@ def send_whatsapp_alert(producto, telefono, cliente):
     except Exception as e:
         logging.error(f"❌ Error: {e}")
 
-# ============================
-# FUNCIÓN PARA REGISTRAR EN GOOGLE SHEETS (CON LA URL CORRECTA)
-# ============================
 def registrar_venta_en_sheets(producto, telefono, cliente):
     try:
         precio_match = re.search(r'\(([^)]+)\)', producto)
@@ -142,7 +133,10 @@ def registrar_venta_en_sheets(producto, telefono, cliente):
             "estado": "Completado",
             "secret": SECRET_KEY
         }
+        logging.info(f"📤 Enviando a Sheets: {data}")
         resp = requests.post(GOOGLE_SHEETS_URL, json=data, timeout=10)
+        logging.info(f"📄 Respuesta de Sheets: Código {resp.status_code}")
+        logging.info(f"📄 Contenido: {resp.text[:500]}")
         if resp.status_code == 200:
             logging.info("✅ Venta registrada en Google Sheets")
         else:
@@ -150,9 +144,6 @@ def registrar_venta_en_sheets(producto, telefono, cliente):
     except Exception as e:
         logging.error(f"❌ Excepción al registrar en Sheets: {e}")
 
-# ============================
-# PROCESAMIENTO DE MENSAJES
-# ============================
 def process_message(update):
     message = update.get("message")
     if not message:
@@ -170,9 +161,6 @@ def process_message(update):
     orders = load_orders()
     logging.info(f"📋 orders actual: {orders}")
 
-    # ============================================
-    # 1. CAPTURA DE TELÉFONO
-    # ============================================
     user_order = orders.get(user_id)
     if user_order and user_order.get("estado") == "esperando_telefono":
         phone = text
@@ -186,10 +174,8 @@ def process_message(update):
         producto = orders[user_id]["producto"]
         save_orders(orders)
 
-        # 🔥 REGISTRAR VENTA EN GOOGLE SHEETS
         registrar_venta_en_sheets(producto, phone, username)
 
-        # Mensaje al cliente
         send_telegram(chat_id,
             f"✅ ¡Gracias, {first_name}!\n\n"
             "Tu pedido ha sido recibido y está en proceso.\n"
@@ -199,10 +185,8 @@ def process_message(update):
             f"🙏 ¡Gracias por preferir {NOMBRE_NEGOCIO}!"
         )
 
-        # --- ALERTA AL DUEÑO (WhatsApp) ---
         send_whatsapp_alert(producto, phone, username)
 
-        # --- ALERTA AL DUEÑO (Telegram) ---
         if CHAT_ID_DUENO:
             try:
                 send_telegram(CHAT_ID_DUENO,
@@ -212,9 +196,6 @@ def process_message(update):
                 logging.error(f"Error enviando alerta al dueño: {e}")
         return
 
-    # ============================================
-    # 2. COMANDOS
-    # ============================================
     if text == "/start":
         send_telegram(chat_id,
             f"🍰 ¡Bienvenido a {NOMBRE_NEGOCIO}!\n\n"
@@ -235,9 +216,6 @@ def process_message(update):
         send_telegram(chat_id, msg)
         return
 
-    # ============================================
-    # 3. SELECCIÓN DE PRODUCTO
-    # ============================================
     if text.isdigit():
         num = int(text)
         catalog = load_catalog()
@@ -263,14 +241,8 @@ def process_message(update):
             send_telegram(chat_id, "❌ Número inválido. Usa /menu.")
         return
 
-    # ============================================
-    # 4. MENSAJE POR DEFECTO
-    # ============================================
     send_telegram(chat_id, "📌 Usa /menu para ver los productos.")
 
-# ============================
-# RUTAS DE FLASK
-# ============================
 @app.route('/', methods=['GET'])
 def index():
     return "🍰 Bot de Marquesas está vivo!", 200
@@ -300,8 +272,5 @@ def setup():
     except Exception as e:
         return jsonify({"error": str(e)})
 
-# ============================
-# ENTRADA PRINCIPAL
-# ============================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
