@@ -20,8 +20,8 @@ MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
 # 🔐 CLAVE SECRETA (DEBE COINCIDIR CON LA DE APPS SCRIPT)
 SECRET_KEY = os.environ.get("SECRET_KEY", "clave_por_defecto_cambiala")
 
-# ✅ URL DE GOOGLE SHEETS (CORRECTA Y ENTRE COMILLAS)
-GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbxElrjqF9G4WzbBg4qt63IhneTxDYXSxE7KAEngC72ysRx1LmqxYBCydtWoNpRedAqh/exec"
+# ✅ URL DE GOOGLE SHEETS (ACTUALIZADA CON LA NUEVA QUE ME DISTE)
+GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyiC6LPt0ueS1OvWXVp_LbdtYTIBqRWHTxbSUOMa1ENCV9RpWYK5rhgzD3cDEOoW-CpSQ/exec"
 
 DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
