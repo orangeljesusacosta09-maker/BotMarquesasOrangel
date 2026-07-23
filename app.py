@@ -115,16 +115,17 @@ def send_whatsapp_alert(producto, telefono, cliente, tipo_pago, metodo_pago, fec
 
 def registrar_venta_en_sheets(producto, precio, telefono, cliente, tipo_pago, metodo_pago, fecha_vencimiento=None):
     try:
-        data = {
-            "producto": producto,
-            "precio": precio,
-            "telefono": telefono,
-            "cliente": cliente,
-            "estado": "Completado",
-            "tipo_pago": tipo_pago,
-            "fecha_vencimiento": fecha_vencimiento if fecha_vencimiento else "",
-            "metodo_pago": metodo_pago,
-            "secret": SECRET_KEY
+       data = {
+    "producto": producto,
+    "precio": precio,
+    "telefono": telefono,
+    "cliente": cliente,
+    "estado": "Completado",
+    "tipo_pago": tipo_pago,           # ⭐
+    "fecha_vencimiento": fecha_vencimiento if fecha_vencimiento else "",
+    "metodo_pago": metodo_pago,       # ⭐
+    "secret": SECRET_KEY
+}
         }
         resp = requests.post(GOOGLE_SHEETS_URL, json=data, timeout=10)
         if resp.status_code == 200:
