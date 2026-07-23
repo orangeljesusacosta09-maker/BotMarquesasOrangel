@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import requests
+import re
 from flask import Flask, request, jsonify
 from urllib.parse import quote
 
@@ -15,6 +16,12 @@ TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID_DUENO = os.environ.get("TELEGRAM_CHAT_ID_DUENO")
 CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
 MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
+
+# 🔐 CLAVE SECRETA PARA GOOGLE SHEETS (se leerá desde variables de entorno en Render)
+SECRET_KEY = os.environ.get("SECRET_KEY", "clave_por_defecto_cambiala")
+
+# URL de Google Sheets (copia la URL que obtuviste de Apps Script)
+GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/TU_CODIGO/exec"  # <-- REEMPLAZA CON TU URL
 
 DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
@@ -46,7 +53,7 @@ def save_orders(orders):
     try:
         with open(ORDERS_FILE, "w") as f:
             json.dump(orders, f, indent=2)
-        logging.info(f"✅ orders.json guardado correctamente")
+        logging.info("✅ orders.json guardado correctamente")
     except Exception as e:
         logging.error(f"Error guardando orders.json: {e}")
 
@@ -78,12 +85,9 @@ def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
         send_telegram(chat_id, caption)
 
 # ============================
-# FUNCIÓN WHATSAPP (MENSAJE CORTO Y SIN CARACTERES ESPECIALES)
+# FUNCIÓN WHATSAPP (MENSAJE CORTO)
 # ============================
 def send_whatsapp_alert(producto, telefono, cliente):
-    """
-    Envía un mensaje corto y sin caracteres especiales para evitar error 403.
-    """
     if not CALLMEBOT_API_KEY:
         logging.error("❌ CALLMEBOT_API_KEY no está definida")
         return
@@ -96,15 +100,12 @@ def send_whatsapp_alert(producto, telefono, cliente):
         logging.error(f"❌ Número inválido: {numero_limpio}")
         return
 
-    # Mensaje corto y sin caracteres especiales
     producto_corto = producto[:30]
     mensaje_texto = f"Nuevo pedido. Producto: {producto_corto}. Tel: {telefono}. Cliente: {cliente}"
     mensaje_codificado = quote(mensaje_texto, safe='')
-    
     url = f"https://api.callmebot.com/whatsapp.php?phone={numero_limpio}&text={mensaje_codificado}&apikey={CALLMEBOT_API_KEY}"
 
     logging.info(f"📤 URL WHATSAPP: {url}")
-
     try:
         resp = requests.get(url, timeout=30)
         logging.info(f"✅ Código HTTP: {resp.status_code}")
@@ -115,6 +116,31 @@ def send_whatsapp_alert(producto, telefono, cliente):
             logging.warning(f"⚠️ Respuesta inesperada: {resp.text}")
     except Exception as e:
         logging.error(f"❌ Error: {e}")
+
+# ============================
+# FUNCIÓN PARA REGISTRAR EN GOOGLE SHEETS
+# ============================
+def registrar_venta_en_sheets(producto, telefono, cliente):
+    try:
+        # Extraer precio del producto
+        precio_match = re.search(r'\(([^)]+)\)', producto)
+        precio = precio_match.group(1) if precio_match else "N/A"
+        
+        data = {
+            "producto": producto,
+            "precio": precio,
+            "telefono": telefono,
+            "cliente": cliente,
+            "estado": "Completado",
+            "secret": SECRET_KEY  # 🔐 Enviamos la clave secreta
+        }
+        resp = requests.post(GOOGLE_SHEETS_URL, json=data, timeout=10)
+        if resp.status_code == 200:
+            logging.info("✅ Venta registrada en Google Sheets")
+        else:
+            logging.error(f"❌ Error registrando en Sheets: {resp.text}")
+    except Exception as e:
+        logging.error(f"❌ Excepción al registrar en Sheets: {e}")
 
 # ============================
 # PROCESAMIENTO DE MENSAJES
@@ -147,13 +173,15 @@ def process_message(update):
             send_telegram(chat_id, "📱 Por favor, envía un número de WhatsApp válido (ej: 0412-1234567).")
             return
 
-        # Guardar pedido completado
         orders[user_id]["telefono"] = phone
         orders[user_id]["estado"] = "completado"
         producto = orders[user_id]["producto"]
         save_orders(orders)
 
-        # 🔥 MENSAJE DE AGRADECIMIENTO CON MENCIÓN EXPLÍCITA DE ESPERA
+        # 🔥 REGISTRAR VENTA EN GOOGLE SHEETS
+        registrar_venta_en_sheets(producto, phone, username)
+
+        # Mensaje al cliente con indicación de espera
         send_telegram(chat_id,
             f"✅ ¡Gracias, {first_name}!\n\n"
             "Tu pedido ha sido recibido y está en proceso.\n"
