@@ -256,6 +256,8 @@ def process_message(update):
                 fecha_vencimiento = fecha_actual + timedelta(days=dias)
                 fecha_vencimiento_str = fecha_vencimiento.strftime("%d/%m/%Y")
                 registrar_venta_en_sheets(producto, precio, telefono, username, tipo_pago, metodo_pago, fecha_vencimiento_str)
+                
+                # Mensaje al cliente
                 send_telegram(chat_id,
                     f"✅ ¡Gracias, {first_name}!\n\n"
                     "Tu pedido ha sido registrado como **Crédito**.\n"
@@ -264,9 +266,19 @@ def process_message(update):
                     "En los próximos minutos te contactaré para coordinar la entrega.\n\n"
                     f"🚚 *Delivery en {DIRECCION}*\n🙏 ¡Gracias por preferir {NOMBRE_NEGOCIO}!"
                 )
+                
+                # 🔥 ALERTA AL DUEÑO POR TELEGRAM (¡AHORA SÍ!)
+                send_telegram(CHAT_ID_DUENO,
+                    f"🛎️ NUEVO PEDIDO\n{producto}\nTeléfono: {telefono}\nCliente: @{username}\nTipo: {tipo_pago} ({metodo_pago})\nVence: {fecha_vencimiento_str}"
+                )
+                
+                # Alerta WhatsApp
                 send_whatsapp_alert(producto, telefono, username, tipo_pago, metodo_pago, fecha_vencimiento_str)
-            else:
+                
+            else:  # Contado
                 registrar_venta_en_sheets(producto, precio, telefono, username, tipo_pago, metodo_pago, None)
+                
+                # Mensaje al cliente
                 send_telegram(chat_id,
                     f"✅ ¡Gracias, {first_name}!\n\n"
                     "Tu pedido ha sido registrado como **Contado**.\n"
@@ -274,6 +286,13 @@ def process_message(update):
                     "En los próximos minutos te contactaré para coordinar la entrega.\n\n"
                     f"🚚 *Delivery en {DIRECCION}*\n🙏 ¡Gracias por preferir {NOMBRE_NEGOCIO}!"
                 )
+                
+                # 🔥 ALERTA AL DUEÑO POR TELEGRAM
+                send_telegram(CHAT_ID_DUENO,
+                    f"🛎️ NUEVO PEDIDO\n{producto}\nTeléfono: {telefono}\nCliente: @{username}\nTipo: {tipo_pago} ({metodo_pago})"
+                )
+                
+                # Alerta WhatsApp
                 send_whatsapp_alert(producto, telefono, username, tipo_pago, metodo_pago, None)
 
             # Limpiar estado del usuario
