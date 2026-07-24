@@ -19,7 +19,7 @@ CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
 MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "clave_por_defecto_cambiala")
-GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyEoRuA-EhaaRQdFB6VABTj6WfuApkBi_4YKTUMF5OTQPvn8IglLRCzFdYTC9Td8Wl1Xw/exec"
+GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyDz19Lde2TPA-WCEW9BCpyZejX2pjRPt8TPSQ9AAXWuQ46AQdM9kp8ocQfp0X1OsJ6Zg/exec"
 
 DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
@@ -267,7 +267,7 @@ def process_message(update):
                     f"🚚 *Delivery en {DIRECCION}*\n🙏 ¡Gracias por preferir {NOMBRE_NEGOCIO}!"
                 )
                 
-                # 🔥 ALERTA AL DUEÑO POR TELEGRAM (¡AHORA SÍ!)
+                # 🔥 ALERTA AL DUEÑO POR TELEGRAM
                 send_telegram(CHAT_ID_DUENO,
                     f"🛎️ NUEVO PEDIDO\n{producto}\nTeléfono: {telefono}\nCliente: @{username}\nTipo: {tipo_pago} ({metodo_pago})\nVence: {fecha_vencimiento_str}"
                 )
