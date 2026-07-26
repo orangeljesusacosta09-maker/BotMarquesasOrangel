@@ -7,9 +7,6 @@ from flask import Flask, request, jsonify
 from urllib.parse import quote
 from datetime import datetime, timedelta
 
-# ============================
-# CONFIGURACIÓN
-# ============================
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -24,63 +21,21 @@ DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
 
 # ============================
-# FUNCIONES DE GOOGLE SHEETS (PERSISTENCIA DE SESIONES)
+# ESTADO EN MEMORIA (más rápido y confiable)
 # ============================
-def leer_sesion(user_id):
-    try:
-        url = f"{GOOGLE_SHEETS_URL}?action=read&user_id={user_id}&secret={SECRET_KEY}"
-        resp = requests.get(url, timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("success") and data.get("data"):
-                logging.info(f"✅ Sesión leída para {user_id}: {data['data']}")
-                return data["data"]
-        return None
-    except Exception as e:
-        logging.error(f"Error leyendo sesión: {e}")
-        return None
+SESSION_CACHE = {}
 
-def guardar_sesion(user_id, producto=None, estado=None, telefono=None, tipo_pago=None, dias_credito=None, metodo_pago=None):
-    try:
-        data = {
-            "action": "write",
-            "user_id": user_id,
-            "producto": producto or "",
-            "estado": estado or "",
-            "telefono": telefono or "",
-            "tipo_pago": tipo_pago or "",
-            "dias_credito": dias_credito or "",
-            "metodo_pago": metodo_pago or "",
-            "timestamp": datetime.now().isoformat(),
-            "secret": SECRET_KEY
-        }
-        logging.info(f"📤 Guardando en Sheets: {data}")
-        resp = requests.post(GOOGLE_SHEETS_URL, json=data, timeout=10)
-        if resp.status_code == 200:
-            logging.info(f"✅ Sesión guardada para {user_id}")
-            return True
-        else:
-            logging.error(f"❌ Error guardando sesión: {resp.text}")
-            return False
-    except Exception as e:
-        logging.error(f"❌ Excepción guardando sesión: {e}")
-        return False
+def get_user_state(user_id):
+    return SESSION_CACHE.get(user_id, {})
 
-def eliminar_sesion(user_id):
-    try:
-        data = {
-            "action": "delete",
-            "user_id": user_id,
-            "secret": SECRET_KEY
-        }
-        resp = requests.post(GOOGLE_SHEETS_URL, json=data, timeout=10)
-        if resp.status_code == 200:
-            logging.info(f"✅ Sesión eliminada para {user_id}")
-            return True
-        return False
-    except Exception as e:
-        logging.error(f"❌ Error eliminando sesión: {e}")
-        return False
+def set_user_state(user_id, data):
+    SESSION_CACHE[user_id] = data
+    logging.info(f"📦 Estado actualizado para {user_id}: {data}")
+
+def clear_user_state(user_id):
+    if user_id in SESSION_CACHE:
+        del SESSION_CACHE[user_id]
+        logging.info(f"🗑️ Estado eliminado para {user_id}")
 
 # ============================
 # FUNCIONES AUXILIARES
@@ -217,17 +172,14 @@ def process_message(update):
 
     logging.info(f"📩 Mensaje de {username} (ID:{user_id}): '{text}'")
 
-    # Leer sesión desde Google Sheets o caché
-    sesion = leer_sesion(user_id)
-    if sesion is None:
-        sesion = {}
-    
-    estado_actual = sesion.get("estado") if sesion else None
-    producto_actual = sesion.get("producto") if sesion else None
-    telefono_actual = sesion.get("telefono") if sesion else None
-    tipo_pago_actual = sesion.get("tipo_pago") if sesion else None
-    dias_credito_actual = sesion.get("dias_credito") if sesion else None
-    metodo_pago_actual = sesion.get("metodo_pago") if sesion else None
+    # Obtener estado del usuario desde memoria
+    state = get_user_state(user_id)
+    estado_actual = state.get("estado")
+    producto_actual = state.get("producto")
+    telefono_actual = state.get("telefono")
+    tipo_pago_actual = state.get("tipo_pago")
+    dias_credito_actual = state.get("dias_credito")
+    metodo_pago_actual = state.get("metodo_pago")
 
     logging.info(f"🔍 Estado actual del usuario {user_id}: {estado_actual}")
 
@@ -241,7 +193,11 @@ def process_message(update):
         if not phone_clean.isdigit() or len(phone_clean) < 10:
             send_telegram(chat_id, "📱 Por favor, envía un número de WhatsApp válido (ej: 0412-1234567).")
             return
-        guardar_sesion(user_id, producto=producto_actual, estado="esperando_pago", telefono=phone)
+        
+        state["telefono"] = phone
+        state["estado"] = "esperando_pago"
+        set_user_state(user_id, state)
+        
         send_telegram(chat_id,
             f"✅ Teléfono guardado: {phone}\n\n"
             "💰 Ahora elige la forma de pago:\n"
@@ -256,7 +212,9 @@ def process_message(update):
     # ============================================
     if estado_actual == "esperando_pago":
         if text == "1":
-            guardar_sesion(user_id, producto=producto_actual, estado="esperando_metodo_pago", telefono=telefono_actual, tipo_pago="Contado")
+            state["tipo_pago"] = "Contado"
+            state["estado"] = "esperando_metodo_pago"
+            set_user_state(user_id, state)
             send_telegram(chat_id,
                 "💳 Ahora elige el *método de pago*:\n\n"
                 "1️⃣ Binance\n"
@@ -267,7 +225,9 @@ def process_message(update):
             )
             return
         elif text == "2":
-            guardar_sesion(user_id, producto=producto_actual, estado="esperando_dias_credito", telefono=telefono_actual, tipo_pago="Crédito")
+            state["tipo_pago"] = "Crédito"
+            state["estado"] = "esperando_dias_credito"
+            set_user_state(user_id, state)
             send_telegram(chat_id,
                 "📅 Has elegido **Crédito**.\n"
                 "¿En cuántos días cancelas? (máximo 7 días)\n\n"
@@ -285,7 +245,9 @@ def process_message(update):
         if text.isdigit():
             dias = int(text)
             if 1 <= dias <= 7:
-                guardar_sesion(user_id, producto=producto_actual, estado="esperando_metodo_pago", telefono=telefono_actual, tipo_pago="Crédito", dias_credito=dias)
+                state["dias_credito"] = dias
+                state["estado"] = "esperando_metodo_pago"
+                set_user_state(user_id, state)
                 send_telegram(chat_id,
                     "💳 Ahora elige el *método de pago*:\n\n"
                     "1️⃣ Binance\n"
@@ -321,7 +283,7 @@ def process_message(update):
             precio = precio.group(1) if precio else "N/A"
 
             if tipo_pago == "Crédito":
-                dias = int(dias_credito_actual or 7) if dias_credito_actual else 7
+                dias = int(dias_credito_actual or 7)
                 fecha_actual = datetime.now()
                 fecha_vencimiento = fecha_actual + timedelta(days=dias)
                 fecha_vencimiento_str = fecha_vencimiento.strftime("%d/%m/%Y")
@@ -353,7 +315,7 @@ def process_message(update):
                 )
                 send_whatsapp_alert(producto, telefono, username, tipo_pago, metodo_pago, None)
             
-            eliminar_sesion(user_id)
+            clear_user_state(user_id)
             return
         else:
             send_telegram(chat_id, "❌ Opción inválida. Responde con el *número* del método de pago.")
@@ -363,7 +325,7 @@ def process_message(update):
     # COMANDOS
     # ============================================
     if text == "/start":
-        eliminar_sesion(user_id)
+        clear_user_state(user_id)
         send_telegram(chat_id,
             f"🍰 ¡Bienvenido a {NOMBRE_NEGOCIO}!\n\n"
             "Envía /menu para ver el catálogo.\n"
@@ -395,12 +357,13 @@ def process_message(update):
         if 1 <= num <= len(catalog):
             product = catalog[num-1]
             producto = f"{product['nombre']} - {product['gramos']} ({product['precio']})"
-            logging.info(f"🔍 Guardando sesión para {user_id} con estado 'esperando_telefono'")
-            guardar_sesion(user_id, producto=producto, estado="esperando_telefono")
             
-            # Verificar que se guardó
-            verif = leer_sesion(user_id)
-            logging.info(f"🔍 Verificación de sesión: {verif}")
+            # Guardar estado en memoria
+            set_user_state(user_id, {
+                "producto": producto,
+                "estado": "esperando_telefono"
+            })
+            logging.info(f"🔍 Estado guardado para {user_id}: esperando_telefono")
             
             caption = (f"✅ *Elegiste:* {product['nombre']} ({product['gramos']})\n"
                        f"💰 *Precio:* {product['precio']}\n\n"
