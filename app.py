@@ -7,6 +7,9 @@ from flask import Flask, request, jsonify
 from urllib.parse import quote
 from datetime import datetime, timedelta
 
+# ============================
+# CONFIGURACIÓN
+# ============================
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -15,54 +18,29 @@ CHAT_ID_DUENO = os.environ.get("TELEGRAM_CHAT_ID_DUENO")
 CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
 MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
 SECRET_KEY = os.environ.get("SECRET_KEY", "Marquesas2026!Segura")
-
-# 🔥 URL de Google Sheets (NUEVA)
-GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyKCqMEcaATBCk8EfEMjMtoaE_Fb502l4P2G-CIe54RaULXADzCUPlE1CFKI0mXumE00A/exec"
+GOOGLE_SHEETS_URL = os.environ.get("GOOGLE_SHEETS_URL", "https://script.google.com/macros/s/AKfycbyKCqMEcaATBCk8EfEMjMtoaE_Fb502l4P2G-CIe54RaULXADzCUPlE1CFKI0mXumE00A/exec")
 
 DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
 
-# Cache en memoria para respaldo
-SESSION_CACHE = {}
-
+# ============================
+# FUNCIONES DE GOOGLE SHEETS (PERSISTENCIA DE SESIONES)
+# ============================
 def leer_sesion(user_id):
-    # Intentar desde caché primero
-    if user_id in SESSION_CACHE:
-        logging.info(f"📦 Sesión leída desde caché para {user_id}")
-        return SESSION_CACHE[user_id]
-    
     try:
         url = f"{GOOGLE_SHEETS_URL}?action=read&user_id={user_id}&secret={SECRET_KEY}"
-        logging.info(f"📤 URL de lectura: {url}")
-        resp = requests.get(url, timeout=5)
-        logging.info(f"📥 Código de respuesta: {resp.status_code}")
-        logging.info(f"📄 Contenido de respuesta: {resp.text[:200]}")
-        
+        resp = requests.get(url, timeout=10)
         if resp.status_code == 200:
             data = resp.json()
             if data.get("success") and data.get("data"):
-                # Guardar en caché para futuras lecturas
-                SESSION_CACHE[user_id] = data["data"]
-                logging.info(f"✅ Sesión leída desde Sheets para {user_id}")
+                logging.info(f"✅ Sesión leída para {user_id}")
                 return data["data"]
         return None
     except Exception as e:
-        logging.error(f"Error leyendo sesión desde Sheets: {e}")
+        logging.error(f"Error leyendo sesión: {e}")
         return None
 
 def guardar_sesion(user_id, producto=None, estado=None, telefono=None, tipo_pago=None, dias_credito=None, metodo_pago=None):
-    # Guardar en caché siempre
-    SESSION_CACHE[user_id] = {
-        "producto": producto or "",
-        "estado": estado or "",
-        "telefono": telefono or "",
-        "tipo_pago": tipo_pago or "",
-        "dias_credito": dias_credito or "",
-        "metodo_pago": metodo_pago or "",
-        "timestamp": datetime.now().isoformat()
-    }
-    logging.info(f"📦 Sesión guardada en caché para {user_id}")
-    
     try:
         data = {
             "action": "write",
@@ -76,11 +54,9 @@ def guardar_sesion(user_id, producto=None, estado=None, telefono=None, tipo_pago
             "timestamp": datetime.now().isoformat(),
             "secret": SECRET_KEY
         }
-        logging.info(f"📤 Guardando sesión en Sheets: {data}")
         resp = requests.post(GOOGLE_SHEETS_URL, json=data, timeout=10)
-        logging.info(f"📥 Respuesta de guardado: {resp.status_code} - {resp.text[:200]}")
         if resp.status_code == 200:
-            logging.info(f"✅ Sesión guardada en Sheets para {user_id}")
+            logging.info(f"✅ Sesión guardada para {user_id}")
             return True
         else:
             logging.error(f"❌ Error guardando sesión: {resp.text}")
@@ -90,8 +66,6 @@ def guardar_sesion(user_id, producto=None, estado=None, telefono=None, tipo_pago
         return False
 
 def eliminar_sesion(user_id):
-    if user_id in SESSION_CACHE:
-        del SESSION_CACHE[user_id]
     try:
         data = {
             "action": "delete",
@@ -102,14 +76,14 @@ def eliminar_sesion(user_id):
         if resp.status_code == 200:
             logging.info(f"✅ Sesión eliminada para {user_id}")
             return True
-    except:
-        pass
-    return False
+        return False
+    except Exception as e:
+        logging.error(f"❌ Error eliminando sesión: {e}")
+        return False
 
 # ============================
-# El resto de funciones (load_catalog, send_telegram, send_photo_telegram, send_album_telegram, send_whatsapp_alert, registrar_venta_en_sheets) son iguales
+# FUNCIONES AUXILIARES
 # ============================
-
 def load_catalog():
     try:
         with open("catalog.json", "r", encoding="utf-8") as f:
@@ -205,6 +179,7 @@ def send_whatsapp_alert(producto, telefono, cliente, tipo_pago, metodo_pago, fec
     except Exception as e:
         logging.error(f"❌ Error: {e}")
 
+# 🔥 CORREGIDO: SOLO REGISTRA VENTAS COMPLETADAS (NO INTERMEDIAS)
 def registrar_venta_en_sheets(producto, precio, telefono, cliente, tipo_pago, metodo_pago, fecha_vencimiento=None):
     try:
         data = {
@@ -220,12 +195,15 @@ def registrar_venta_en_sheets(producto, precio, telefono, cliente, tipo_pago, me
         }
         resp = requests.post(GOOGLE_SHEETS_URL, json=data, timeout=10)
         if resp.status_code == 200:
-            logging.info("✅ Venta registrada en Google Sheets")
+            logging.info("✅ Venta registrada en Google Sheets (VentasBot)")
         else:
             logging.error(f"❌ Error registrando en Sheets: {resp.text}")
     except Exception as e:
         logging.error(f"❌ Excepción al registrar en Sheets: {e}")
 
+# ============================
+# PROCESAMIENTO DE MENSAJES
+# ============================
 def process_message(update):
     message = update.get("message")
     if not message:
@@ -249,9 +227,7 @@ def process_message(update):
     dias_credito_actual = sesion.get("dias_credito") if sesion else None
     metodo_pago_actual = sesion.get("metodo_pago") if sesion else None
 
-    # ============================================
     # CAPTURA DE TELÉFONO
-    # ============================================
     if estado_actual == "esperando_telefono":
         phone = text
         phone_clean = phone.replace("+", "").replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
@@ -268,9 +244,7 @@ def process_message(update):
         )
         return
 
-    # ============================================
     # CAPTURA DE FORMA DE PAGO
-    # ============================================
     if estado_actual == "esperando_pago":
         if text == "1":
             guardar_sesion(user_id, producto=producto_actual, estado="esperando_metodo_pago", telefono=telefono_actual, tipo_pago="Contado")
@@ -295,9 +269,7 @@ def process_message(update):
             send_telegram(chat_id, "❌ Opción inválida. Responde *1* para Contado o *2* para Crédito.")
             return
 
-    # ============================================
     # CAPTURA DE DÍAS DE CRÉDITO
-    # ============================================
     if estado_actual == "esperando_dias_credito":
         if text.isdigit():
             dias = int(text)
@@ -319,9 +291,7 @@ def process_message(update):
             send_telegram(chat_id, "❌ Por favor, responde con un número del *1 al 7*.")
             return
 
-    # ============================================
     # CAPTURA DE MÉTODO DE PAGO
-    # ============================================
     if estado_actual == "esperando_metodo_pago":
         metodos = {
             "1": "Binance",
@@ -343,7 +313,9 @@ def process_message(update):
                 fecha_vencimiento = fecha_actual + timedelta(days=dias)
                 fecha_vencimiento_str = fecha_vencimiento.strftime("%d/%m/%Y")
                 
+                # 🔥 SOLO UNA VEZ AL FINAL: REGISTRA LA VENTA COMPLETADA
                 registrar_venta_en_sheets(producto, precio, telefono, username, tipo_pago, metodo_pago, fecha_vencimiento_str)
+                
                 send_telegram(chat_id,
                     f"✅ ¡Gracias, {first_name}!\n\n"
                     "Tu pedido ha sido registrado como **Crédito**.\n"
@@ -357,7 +329,9 @@ def process_message(update):
                 )
                 send_whatsapp_alert(producto, telefono, username, tipo_pago, metodo_pago, fecha_vencimiento_str)
             else:
+                # 🔥 SOLO UNA VEZ AL FINAL: REGISTRA LA VENTA COMPLETADA
                 registrar_venta_en_sheets(producto, precio, telefono, username, tipo_pago, metodo_pago, None)
+                
                 send_telegram(chat_id,
                     f"✅ ¡Gracias, {first_name}!\n\n"
                     "Tu pedido ha sido registrado como **Contado**.\n"
@@ -376,9 +350,7 @@ def process_message(update):
             send_telegram(chat_id, "❌ Opción inválida. Responde con el *número* del método de pago.")
             return
 
-    # ============================================
     # COMANDOS
-    # ============================================
     if text == "/start":
         eliminar_sesion(user_id)
         send_telegram(chat_id,
@@ -403,15 +375,14 @@ def process_message(update):
         send_telegram(chat_id, msg)
         return
 
-    # ============================================
     # SELECCIÓN DE PRODUCTO (por número)
-    # ============================================
     if text.isdigit():
         num = int(text)
         catalog = load_catalog()
         if 1 <= num <= len(catalog):
             product = catalog[num-1]
             producto = f"{product['nombre']} - {product['gramos']} ({product['precio']})"
+            # 🔥 Guarda en SESIONES, no en VentasBot
             guardar_sesion(user_id, producto=producto, estado="esperando_telefono")
             caption = (f"✅ *Elegiste:* {product['nombre']} ({product['gramos']})\n"
                        f"💰 *Precio:* {product['precio']}\n\n"
@@ -428,6 +399,9 @@ def process_message(update):
 
     send_telegram(chat_id, "📌 Usa /menu para ver los productos.")
 
+# ============================
+# RUTAS DE FLASK
+# ============================
 @app.route('/', methods=['GET'])
 def index():
     return "✅ Bot está vivo!", 200
