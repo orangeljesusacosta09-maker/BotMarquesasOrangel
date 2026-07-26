@@ -21,7 +21,7 @@ DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
 
 # ============================
-# ESTADO EN MEMORIA (más rápido y confiable)
+# ESTADO EN MEMORIA
 # ============================
 SESSION_CACHE = {}
 
@@ -172,7 +172,37 @@ def process_message(update):
 
     logging.info(f"📩 Mensaje de {username} (ID:{user_id}): '{text}'")
 
-    # Obtener estado del usuario desde memoria
+    # ============================================
+    # PRIMERO: VERIFICAR COMANDOS (SIEMPRE PRIORITARIOS)
+    # ============================================
+    if text == "/start":
+        clear_user_state(user_id)
+        send_telegram(chat_id,
+            f"🍰 ¡Bienvenido a {NOMBRE_NEGOCIO}!\n\n"
+            "Envía /menu para ver el catálogo.\n"
+            f"🚚 *Delivery:* Disponible SOLO en {DIRECCION}."
+        )
+        return
+
+    if text == "/menu":
+        clear_user_state(user_id)  # 👈 LIMPIAR ESTADO PARA EVITAR CONFLICTOS
+        catalog = load_catalog()
+        if not catalog:
+            send_telegram(chat_id, "❌ Error al cargar el catálogo. Contacta al administrador.")
+            return
+        
+        send_album_telegram(chat_id, catalog)
+        
+        msg = "📋 *Nuestro Catálogo:*\n\n"
+        for i, item in enumerate(catalog, start=1):
+            msg += f"{i}. {item['nombre']} - {item['gramos']} ({item['precio']})\n"
+        msg += f"\nResponde con el *número* que deseas.\n\n🚚 *Delivery en {DIRECCION}.*"
+        send_telegram(chat_id, msg)
+        return
+
+    # ============================================
+    # LUEGO: OBTENER ESTADO Y PROCESAR FLUJO DE COMPRA
+    # ============================================
     state = get_user_state(user_id)
     estado_actual = state.get("estado")
     producto_actual = state.get("producto")
@@ -322,33 +352,6 @@ def process_message(update):
             return
 
     # ============================================
-    # COMANDOS
-    # ============================================
-    if text == "/start":
-        clear_user_state(user_id)
-        send_telegram(chat_id,
-            f"🍰 ¡Bienvenido a {NOMBRE_NEGOCIO}!\n\n"
-            "Envía /menu para ver el catálogo.\n"
-            f"🚚 *Delivery:* Disponible SOLO en {DIRECCION}."
-        )
-        return
-
-    if text == "/menu":
-        catalog = load_catalog()
-        if not catalog:
-            send_telegram(chat_id, "❌ Error al cargar el catálogo. Contacta al administrador.")
-            return
-        
-        send_album_telegram(chat_id, catalog)
-        
-        msg = "📋 *Nuestro Catálogo:*\n\n"
-        for i, item in enumerate(catalog, start=1):
-            msg += f"{i}. {item['nombre']} - {item['gramos']} ({item['precio']})\n"
-        msg += f"\nResponde con el *número* que deseas.\n\n🚚 *Delivery en {DIRECCION}.*"
-        send_telegram(chat_id, msg)
-        return
-
-    # ============================================
     # SELECCIÓN DE PRODUCTO (por número)
     # ============================================
     if text.isdigit():
@@ -358,7 +361,8 @@ def process_message(update):
             product = catalog[num-1]
             producto = f"{product['nombre']} - {product['gramos']} ({product['precio']})"
             
-            # Guardar estado en memoria
+            # Limpiar estado previo y guardar nuevo
+            clear_user_state(user_id)
             set_user_state(user_id, {
                 "producto": producto,
                 "estado": "esperando_telefono"
@@ -378,6 +382,9 @@ def process_message(update):
             send_telegram(chat_id, "❌ Número inválido. Usa /menu.")
         return
 
+    # ============================================
+    # MENSAJE POR DEFECTO
+    # ============================================
     send_telegram(chat_id, "📌 Usa /menu para ver los productos.")
 
 # ============================
