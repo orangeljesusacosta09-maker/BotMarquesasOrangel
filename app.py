@@ -33,7 +33,7 @@ def leer_sesion(user_id):
         if resp.status_code == 200:
             data = resp.json()
             if data.get("success") and data.get("data"):
-                logging.info(f"✅ Sesión leída para {user_id}")
+                logging.info(f"✅ Sesión leída para {user_id}: {data['data']}")
                 return data["data"]
         return None
     except Exception as e:
@@ -54,6 +54,7 @@ def guardar_sesion(user_id, producto=None, estado=None, telefono=None, tipo_pago
             "timestamp": datetime.now().isoformat(),
             "secret": SECRET_KEY
         }
+        logging.info(f"📤 Guardando en Sheets: {data}")
         resp = requests.post(GOOGLE_SHEETS_URL, json=data, timeout=10)
         if resp.status_code == 200:
             logging.info(f"✅ Sesión guardada para {user_id}")
@@ -179,7 +180,6 @@ def send_whatsapp_alert(producto, telefono, cliente, tipo_pago, metodo_pago, fec
     except Exception as e:
         logging.error(f"❌ Error: {e}")
 
-# 🔥 CORREGIDO: SOLO REGISTRA VENTAS COMPLETADAS (NO INTERMEDIAS)
 def registrar_venta_en_sheets(producto, precio, telefono, cliente, tipo_pago, metodo_pago, fecha_vencimiento=None):
     try:
         data = {
@@ -217,9 +217,11 @@ def process_message(update):
 
     logging.info(f"📩 Mensaje de {username} (ID:{user_id}): '{text}'")
 
+    # Leer sesión desde Google Sheets o caché
     sesion = leer_sesion(user_id)
     if sesion is None:
         sesion = {}
+    
     estado_actual = sesion.get("estado") if sesion else None
     producto_actual = sesion.get("producto") if sesion else None
     telefono_actual = sesion.get("telefono") if sesion else None
@@ -227,8 +229,13 @@ def process_message(update):
     dias_credito_actual = sesion.get("dias_credito") if sesion else None
     metodo_pago_actual = sesion.get("metodo_pago") if sesion else None
 
+    logging.info(f"🔍 Estado actual del usuario {user_id}: {estado_actual}")
+
+    # ============================================
     # CAPTURA DE TELÉFONO
+    # ============================================
     if estado_actual == "esperando_telefono":
+        logging.info(f"📞 Procesando número de teléfono: {text}")
         phone = text
         phone_clean = phone.replace("+", "").replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
         if not phone_clean.isdigit() or len(phone_clean) < 10:
@@ -244,7 +251,9 @@ def process_message(update):
         )
         return
 
+    # ============================================
     # CAPTURA DE FORMA DE PAGO
+    # ============================================
     if estado_actual == "esperando_pago":
         if text == "1":
             guardar_sesion(user_id, producto=producto_actual, estado="esperando_metodo_pago", telefono=telefono_actual, tipo_pago="Contado")
@@ -269,7 +278,9 @@ def process_message(update):
             send_telegram(chat_id, "❌ Opción inválida. Responde *1* para Contado o *2* para Crédito.")
             return
 
+    # ============================================
     # CAPTURA DE DÍAS DE CRÉDITO
+    # ============================================
     if estado_actual == "esperando_dias_credito":
         if text.isdigit():
             dias = int(text)
@@ -291,7 +302,9 @@ def process_message(update):
             send_telegram(chat_id, "❌ Por favor, responde con un número del *1 al 7*.")
             return
 
+    # ============================================
     # CAPTURA DE MÉTODO DE PAGO
+    # ============================================
     if estado_actual == "esperando_metodo_pago":
         metodos = {
             "1": "Binance",
@@ -313,9 +326,7 @@ def process_message(update):
                 fecha_vencimiento = fecha_actual + timedelta(days=dias)
                 fecha_vencimiento_str = fecha_vencimiento.strftime("%d/%m/%Y")
                 
-                # 🔥 SOLO UNA VEZ AL FINAL: REGISTRA LA VENTA COMPLETADA
                 registrar_venta_en_sheets(producto, precio, telefono, username, tipo_pago, metodo_pago, fecha_vencimiento_str)
-                
                 send_telegram(chat_id,
                     f"✅ ¡Gracias, {first_name}!\n\n"
                     "Tu pedido ha sido registrado como **Crédito**.\n"
@@ -329,9 +340,7 @@ def process_message(update):
                 )
                 send_whatsapp_alert(producto, telefono, username, tipo_pago, metodo_pago, fecha_vencimiento_str)
             else:
-                # 🔥 SOLO UNA VEZ AL FINAL: REGISTRA LA VENTA COMPLETADA
                 registrar_venta_en_sheets(producto, precio, telefono, username, tipo_pago, metodo_pago, None)
-                
                 send_telegram(chat_id,
                     f"✅ ¡Gracias, {first_name}!\n\n"
                     "Tu pedido ha sido registrado como **Contado**.\n"
@@ -350,7 +359,9 @@ def process_message(update):
             send_telegram(chat_id, "❌ Opción inválida. Responde con el *número* del método de pago.")
             return
 
+    # ============================================
     # COMANDOS
+    # ============================================
     if text == "/start":
         eliminar_sesion(user_id)
         send_telegram(chat_id,
@@ -375,15 +386,22 @@ def process_message(update):
         send_telegram(chat_id, msg)
         return
 
+    # ============================================
     # SELECCIÓN DE PRODUCTO (por número)
+    # ============================================
     if text.isdigit():
         num = int(text)
         catalog = load_catalog()
         if 1 <= num <= len(catalog):
             product = catalog[num-1]
             producto = f"{product['nombre']} - {product['gramos']} ({product['precio']})"
-            # 🔥 Guarda en SESIONES, no en VentasBot
+            logging.info(f"🔍 Guardando sesión para {user_id} con estado 'esperando_telefono'")
             guardar_sesion(user_id, producto=producto, estado="esperando_telefono")
+            
+            # Verificar que se guardó
+            verif = leer_sesion(user_id)
+            logging.info(f"🔍 Verificación de sesión: {verif}")
+            
             caption = (f"✅ *Elegiste:* {product['nombre']} ({product['gramos']})\n"
                        f"💰 *Precio:* {product['precio']}\n\n"
                        f"🚚 *Delivery:* {DIRECCION} (sin costo extra)\n"
