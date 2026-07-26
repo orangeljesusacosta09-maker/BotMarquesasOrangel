@@ -19,8 +19,8 @@ CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
 MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
 SECRET_KEY = os.environ.get("SECRET_KEY", "Marquesas2026!Segura")
 
-# 🔥 URL de Google Sheets (actualizada con la que me pasaste)
-GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyDz19Lde2TPA-WCEW9BCpyZejX2pjRPt8TPSQ9AAXWuQ46AQdM9kp8ocQfp0X1OsJ6Zg/exec"
+# 🔥 NUEVA URL DE GOOGLE SHEETS (ACTUALIZADA)
+GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyKCqMEcaATBCk8EfEMjMtoaE_Fb502l4P2G-CIe54RaULXADzCUPlE1CFKI0mXumE00A/exec"
 
 DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
