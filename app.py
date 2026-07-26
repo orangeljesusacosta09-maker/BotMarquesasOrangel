@@ -17,13 +17,71 @@ TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID_DUENO = os.environ.get("TELEGRAM_CHAT_ID_DUENO")
 CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
 MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
-
 SECRET_KEY = os.environ.get("SECRET_KEY", "clave_por_defecto_cambiala")
-GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyDz19Lde2TPA-WCEW9BCpyZejX2pjRPt8TPSQ9AAXWuQ46AQdM9kp8ocQfp0X1OsJ6Zg/exec"
 
+# 🔥 URL de Google Sheets (la que ya tienes y funciona)
+GOOGLE_SHEETS_URL = os.environ.get("GOOGLE_SHEETS_URL", "https://script.google.com/macros/s/AKfycbyDz19Lde2TPA-WCEW9BCpyZejX2pjRPt8TPSQ9AAXWuQ46AQdM9kp8ocQfp0X1OsJ6Zg/exec")
+
+# ⚙️ Configuración de tu negocio (cámbiala si es necesario)
 DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
-ORDERS_FILE = "orders.json"
+
+# ============================
+# FUNCIONES DE GOOGLE SHEETS (PERSISTENCIA DE SESIONES)
+# ============================
+def leer_sesion(user_id):
+    try:
+        url = f"{GOOGLE_SHEETS_URL}?action=read&user_id={user_id}&secret={SECRET_KEY}"
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("success") and data.get("data"):
+                return data["data"]
+        return None
+    except Exception as e:
+        logging.error(f"Error leyendo sesión: {e}")
+        return None
+
+def guardar_sesion(user_id, producto=None, estado=None, telefono=None, tipo_pago=None, dias_credito=None, metodo_pago=None):
+    try:
+        data = {
+            "action": "write",
+            "user_id": user_id,
+            "producto": producto or "",
+            "estado": estado or "",
+            "telefono": telefono or "",
+            "tipo_pago": tipo_pago or "",
+            "dias_credito": dias_credito or "",
+            "metodo_pago": metodo_pago or "",
+            "timestamp": datetime.now().isoformat(),
+            "secret": SECRET_KEY
+        }
+        resp = requests.post(GOOGLE_SHEETS_URL, json=data, timeout=10)
+        if resp.status_code == 200:
+            logging.info(f"✅ Sesión guardada para {user_id}")
+            return True
+        else:
+            logging.error(f"❌ Error guardando sesión: {resp.text}")
+            return False
+    except Exception as e:
+        logging.error(f"❌ Excepción guardando sesión: {e}")
+        return False
+
+def eliminar_sesion(user_id):
+    try:
+        data = {
+            "action": "delete",
+            "user_id": user_id,
+            "secret": SECRET_KEY
+        }
+        resp = requests.post(GOOGLE_SHEETS_URL, json=data, timeout=10)
+        if resp.status_code == 200:
+            logging.info(f"✅ Sesión eliminada para {user_id}")
+            return True
+        return False
+    except Exception as e:
+        logging.error(f"❌ Error eliminando sesión: {e}")
+        return False
 
 # ============================
 # FUNCIONES AUXILIARES
@@ -36,26 +94,11 @@ def load_catalog():
         logging.error(f"Error cargando catalog.json: {e}")
         return []
 
-def load_orders():
-    try:
-        with open(ORDERS_FILE, "r") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
-    except json.JSONDecodeError:
-        return {}
-
-def save_orders(orders):
-    try:
-        with open(ORDERS_FILE, "w") as f:
-            json.dump(orders, f, indent=2)
-        logging.info("✅ orders.json guardado correctamente")
-    except Exception as e:
-        logging.error(f"Error guardando orders.json: {e}")
-
-def send_telegram(chat_id, text, parse_mode="Markdown"):
+def send_telegram(chat_id, text, parse_mode="Markdown", reply_markup=None):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     data = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup)
     try:
         resp = requests.post(url, json=data)
         if resp.status_code != 200:
@@ -91,15 +134,12 @@ def send_whatsapp_alert(producto, telefono, cliente, tipo_pago, metodo_pago, fec
     numero_limpio = MI_NUMERO_WHATSAPP.replace(" ", "").replace("-", "").replace("+", "")
     if not numero_limpio.isdigit():
         return
-
     if tipo_pago == "Crédito" and fecha_vencimiento:
         mensaje_texto = f"Nuevo pedido. Producto: {producto[:30]}. Tel: {telefono}. Cliente: {cliente}. Tipo: CREDITO ({metodo_pago}). Vence: {fecha_vencimiento}"
     else:
         mensaje_texto = f"Nuevo pedido. Producto: {producto[:30]}. Tel: {telefono}. Cliente: {cliente}. Tipo: CONTADO ({metodo_pago})"
-
     mensaje_codificado = quote(mensaje_texto, safe='')
     url = f"https://api.callmebot.com/whatsapp.php?phone={numero_limpio}&text={mensaje_codificado}&apikey={CALLMEBOT_API_KEY}"
-
     logging.info(f"📤 URL WHATSAPP: {url}")
     try:
         resp = requests.get(url, timeout=30)
@@ -131,6 +171,14 @@ def registrar_venta_en_sheets(producto, precio, telefono, cliente, tipo_pago, me
     except Exception as e:
         logging.error(f"❌ Excepción al registrar en Sheets: {e}")
 
+def answer_callback_query(callback_id, text, show_alert=False):
+    url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
+    data = {"callback_query_id": callback_id, "text": text, "show_alert": show_alert}
+    try:
+        requests.post(url, json=data)
+    except Exception as e:
+        logging.error(f"Error respondiendo callback: {e}")
+
 # ============================
 # PROCESAMIENTO DE MENSAJES
 # ============================
@@ -147,23 +195,27 @@ def process_message(update):
 
     logging.info(f"📩 Mensaje de {username} (ID:{user_id}): '{text}'")
 
-    orders = load_orders()
-    user_order = orders.get(user_id, {})
+    # Leer sesión desde Google Sheets
+    sesion = leer_sesion(user_id)
+    if sesion is None:
+        sesion = {}
+    estado_actual = sesion.get("estado") if sesion else None
+    producto_actual = sesion.get("producto") if sesion else None
+    telefono_actual = sesion.get("telefono") if sesion else None
+    tipo_pago_actual = sesion.get("tipo_pago") if sesion else None
+    dias_credito_actual = sesion.get("dias_credito") if sesion else None
+    metodo_pago_actual = sesion.get("metodo_pago") if sesion else None
 
     # ============================================
-    # 1. CAPTURA DE TELÉFONO
+    # CAPTURA DE TELÉFONO
     # ============================================
-    if user_order.get("estado") == "esperando_telefono":
+    if estado_actual == "esperando_telefono":
         phone = text
         phone_clean = phone.replace("+", "").replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
         if not phone_clean.isdigit() or len(phone_clean) < 10:
             send_telegram(chat_id, "📱 Por favor, envía un número de WhatsApp válido (ej: 0412-1234567).")
             return
-
-        orders[user_id]["telefono"] = phone
-        orders[user_id]["estado"] = "esperando_pago"
-        save_orders(orders)
-
+        guardar_sesion(user_id, producto=producto_actual, estado="esperando_pago", telefono=phone)
         send_telegram(chat_id,
             f"✅ Teléfono guardado: {phone}\n\n"
             "💰 Ahora elige la forma de pago:\n"
@@ -174,13 +226,11 @@ def process_message(update):
         return
 
     # ============================================
-    # 2. CAPTURA DE FORMA DE PAGO (CONTADO/CRÉDITO)
+    # CAPTURA DE FORMA DE PAGO
     # ============================================
-    if user_order.get("estado") == "esperando_pago":
+    if estado_actual == "esperando_pago":
         if text == "1":
-            orders[user_id]["tipo_pago"] = "Contado"
-            orders[user_id]["estado"] = "esperando_metodo_pago"
-            save_orders(orders)
+            guardar_sesion(user_id, producto=producto_actual, estado="esperando_metodo_pago", telefono=telefono_actual, tipo_pago="Contado")
             send_telegram(chat_id,
                 "💳 Ahora elige el *método de pago*:\n\n"
                 "1️⃣ Binance\n"
@@ -190,32 +240,26 @@ def process_message(update):
                 "Responde con el *número* (1, 2, 3 o 4)."
             )
             return
-
         elif text == "2":
-            orders[user_id]["tipo_pago"] = "Crédito"
-            orders[user_id]["estado"] = "esperando_dias_credito"
-            save_orders(orders)
+            guardar_sesion(user_id, producto=producto_actual, estado="esperando_dias_credito", telefono=telefono_actual, tipo_pago="Crédito")
             send_telegram(chat_id,
                 "📅 Has elegido **Crédito**.\n"
                 "¿En cuántos días cancelas? (máximo 7 días)\n\n"
                 "Responde con un número del *1 al 7*."
             )
             return
-
         else:
             send_telegram(chat_id, "❌ Opción inválida. Responde *1* para Contado o *2* para Crédito.")
             return
 
     # ============================================
-    # 3. CAPTURA DE DÍAS DE CRÉDITO
+    # CAPTURA DE DÍAS DE CRÉDITO
     # ============================================
-    if user_order.get("estado") == "esperando_dias_credito":
+    if estado_actual == "esperando_dias_credito":
         if text.isdigit():
             dias = int(text)
             if 1 <= dias <= 7:
-                orders[user_id]["dias_credito"] = dias
-                orders[user_id]["estado"] = "esperando_metodo_pago"
-                save_orders(orders)
+                guardar_sesion(user_id, producto=producto_actual, estado="esperando_metodo_pago", telefono=telefono_actual, tipo_pago="Crédito", dias_credito=dias)
                 send_telegram(chat_id,
                     "💳 Ahora elige el *método de pago*:\n\n"
                     "1️⃣ Binance\n"
@@ -233,9 +277,9 @@ def process_message(update):
             return
 
     # ============================================
-    # 4. CAPTURA DE MÉTODO DE PAGO
+    # CAPTURA DE MÉTODO DE PAGO
     # ============================================
-    if user_order.get("estado") == "esperando_metodo_pago":
+    if estado_actual == "esperando_metodo_pago":
         metodos = {
             "1": "Binance",
             "2": "Zinli",
@@ -244,20 +288,19 @@ def process_message(update):
         }
         if text in metodos:
             metodo_pago = metodos[text]
-            producto = user_order.get("producto", "")
-            telefono = user_order.get("telefono", "")
-            tipo_pago = user_order.get("tipo_pago", "Contado")
+            producto = producto_actual
+            telefono = telefono_actual
+            tipo_pago = tipo_pago_actual
             precio = re.search(r'\(([^)]+)\)', producto)
             precio = precio.group(1) if precio else "N/A"
 
             if tipo_pago == "Crédito":
-                dias = user_order.get("dias_credito", 7)
+                dias = int(dias_credito_actual or 7) if dias_credito_actual else 7
                 fecha_actual = datetime.now()
                 fecha_vencimiento = fecha_actual + timedelta(days=dias)
                 fecha_vencimiento_str = fecha_vencimiento.strftime("%d/%m/%Y")
-                registrar_venta_en_sheets(producto, precio, telefono, username, tipo_pago, metodo_pago, fecha_vencimiento_str)
                 
-                # Mensaje al cliente
+                registrar_venta_en_sheets(producto, precio, telefono, username, tipo_pago, metodo_pago, fecha_vencimiento_str)
                 send_telegram(chat_id,
                     f"✅ ¡Gracias, {first_name}!\n\n"
                     "Tu pedido ha sido registrado como **Crédito**.\n"
@@ -266,19 +309,12 @@ def process_message(update):
                     "En los próximos minutos te contactaré para coordinar la entrega.\n\n"
                     f"🚚 *Delivery en {DIRECCION}*\n🙏 ¡Gracias por preferir {NOMBRE_NEGOCIO}!"
                 )
-                
-                # 🔥 ALERTA AL DUEÑO POR TELEGRAM
                 send_telegram(CHAT_ID_DUENO,
                     f"🛎️ NUEVO PEDIDO\n{producto}\nTeléfono: {telefono}\nCliente: @{username}\nTipo: {tipo_pago} ({metodo_pago})\nVence: {fecha_vencimiento_str}"
                 )
-                
-                # Alerta WhatsApp
                 send_whatsapp_alert(producto, telefono, username, tipo_pago, metodo_pago, fecha_vencimiento_str)
-                
-            else:  # Contado
+            else:
                 registrar_venta_en_sheets(producto, precio, telefono, username, tipo_pago, metodo_pago, None)
-                
-                # Mensaje al cliente
                 send_telegram(chat_id,
                     f"✅ ¡Gracias, {first_name}!\n\n"
                     "Tu pedido ha sido registrado como **Contado**.\n"
@@ -286,27 +322,22 @@ def process_message(update):
                     "En los próximos minutos te contactaré para coordinar la entrega.\n\n"
                     f"🚚 *Delivery en {DIRECCION}*\n🙏 ¡Gracias por preferir {NOMBRE_NEGOCIO}!"
                 )
-                
-                # 🔥 ALERTA AL DUEÑO POR TELEGRAM
                 send_telegram(CHAT_ID_DUENO,
                     f"🛎️ NUEVO PEDIDO\n{producto}\nTeléfono: {telefono}\nCliente: @{username}\nTipo: {tipo_pago} ({metodo_pago})"
                 )
-                
-                # Alerta WhatsApp
                 send_whatsapp_alert(producto, telefono, username, tipo_pago, metodo_pago, None)
-
-            # Limpiar estado del usuario
-            del orders[user_id]
-            save_orders(orders)
+            
+            eliminar_sesion(user_id)
             return
         else:
             send_telegram(chat_id, "❌ Opción inválida. Responde con el *número* del método de pago.")
             return
 
     # ============================================
-    # 5. COMANDOS /start y /menu
+    # COMANDOS
     # ============================================
     if text == "/start":
+        eliminar_sesion(user_id)
         send_telegram(chat_id,
             f"🍰 ¡Bienvenido a {NOMBRE_NEGOCIO}!\n\n"
             "Envía /menu para ver el catálogo.\n"
@@ -319,27 +350,31 @@ def process_message(update):
         if not catalog:
             send_telegram(chat_id, "❌ Error al cargar el catálogo. Contacta al administrador.")
             return
-        msg = "📋 *Nuestro Menú:*\n\n"
-        for i, item in enumerate(catalog, start=1):
-            msg += f"{i}. {item['nombre']} - {item['gramos']} ({item['precio']})\n"
-        msg += f"\nResponde con el *número* que deseas.\n\n🚚 *Delivery en {DIRECCION}.*"
-        send_telegram(chat_id, msg)
+        
+        # 🆕 CONSTRUIR TECLADO INLINE CON BOTONES POR CADA PRODUCTO
+        keyboard = []
+        for item in catalog:
+            button_text = f"{item['nombre']} - {item['gramos']} ({item['precio']})"
+            callback_data = f"product_{item['id']}"
+            keyboard.append([{"text": button_text, "callback_data": callback_data}])
+        
+        reply_markup = {"inline_keyboard": keyboard}
+        send_telegram(chat_id,
+            "📋 *Catálogo interactivo:*\n\nSelecciona un producto para ver su imagen y detalles.",
+            reply_markup=reply_markup
+        )
         return
 
     # ============================================
-    # 6. SELECCIÓN DE PRODUCTO
+    # SELECCIÓN DE PRODUCTO (por número - modo legado)
     # ============================================
     if text.isdigit():
         num = int(text)
         catalog = load_catalog()
         if 1 <= num <= len(catalog):
             product = catalog[num-1]
-            if user_id not in orders:
-                orders[user_id] = {}
-            orders[user_id]["producto"] = f"{product['nombre']} - {product['gramos']} ({product['precio']})"
-            orders[user_id]["estado"] = "esperando_telefono"
-            save_orders(orders)
-
+            producto = f"{product['nombre']} - {product['gramos']} ({product['precio']})"
+            guardar_sesion(user_id, producto=producto, estado="esperando_telefono")
             caption = (f"✅ *Elegiste:* {product['nombre']} ({product['gramos']})\n"
                        f"💰 *Precio:* {product['precio']}\n\n"
                        f"🚚 *Delivery:* {DIRECCION} (sin costo extra)\n"
@@ -356,11 +391,46 @@ def process_message(update):
     send_telegram(chat_id, "📌 Usa /menu para ver los productos.")
 
 # ============================
+# PROCESAMIENTO DE CALLBACKS (RESPUESTA A BOTONES INLINE)
+# ============================
+def process_callback(update):
+    query = update["callback_query"]
+    user_id = str(query["from"]["id"])
+    chat_id = query["message"]["chat"]["id"]
+    data = query["data"]
+    callback_id = query["id"]
+
+    logging.info(f"📩 Callback de {user_id}: {data}")
+
+    if data.startswith("product_"):
+        product_id = int(data.split("_")[1])
+        catalog = load_catalog()
+        product = next((p for p in catalog if p["id"] == product_id), None)
+        if product:
+            # Guardar sesión con el producto seleccionado
+            producto = f"{product['nombre']} - {product['gramos']} ({product['precio']})"
+            guardar_sesion(user_id, producto=producto, estado="esperando_telefono")
+            
+            caption = (f"✅ *Elegiste:* {product['nombre']} ({product['gramos']})\n"
+                       f"💰 *Precio:* {product['precio']}\n\n"
+                       f"🚚 *Delivery:* {DIRECCION} (sin costo extra)\n"
+                       "📱 Ahora envíame *tu número de WhatsApp* (ej: 0412-1234567).")
+            try:
+                send_photo_telegram(chat_id, product['imagen'], caption)
+            except Exception as e:
+                logging.error(f"Error enviando foto: {e}")
+                send_telegram(chat_id, caption)
+            
+            answer_callback_query(callback_id, f"✅ {product['nombre']} seleccionado")
+        else:
+            answer_callback_query(callback_id, "❌ Producto no encontrado", show_alert=True)
+
+# ============================
 # RUTAS DE FLASK
 # ============================
 @app.route('/', methods=['GET'])
 def index():
-    return "🍰 Bot de Marquesas está vivo!", 200
+    return "✅ Bot está vivo!", 200
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -369,8 +439,11 @@ def webhook():
         if update and "message" in update:
             logging.info("Webhook recibido, procesando mensaje...")
             process_message(update)
+        elif update and "callback_query" in update:
+            logging.info("Webhook recibido, procesando callback...")
+            process_callback(update)
         else:
-            logging.warning("Webhook recibido sin mensaje")
+            logging.warning("Webhook recibido sin mensaje ni callback")
         return "ok", 200
     except Exception as e:
         logging.error(f"Error en webhook: {e}")
