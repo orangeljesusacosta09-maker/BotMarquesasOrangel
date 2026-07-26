@@ -18,11 +18,8 @@ CHAT_ID_DUENO = os.environ.get("TELEGRAM_CHAT_ID_DUENO")
 CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
 MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
 SECRET_KEY = os.environ.get("SECRET_KEY", "clave_por_defecto_cambiala")
-
-# 🔥 URL de Google Sheets (la que ya tienes y funciona)
 GOOGLE_SHEETS_URL = os.environ.get("GOOGLE_SHEETS_URL", "https://script.google.com/macros/s/AKfycbyDz19Lde2TPA-WCEW9BCpyZejX2pjRPt8TPSQ9AAXWuQ46AQdM9kp8ocQfp0X1OsJ6Zg/exec")
 
-# ⚙️ Configuración de tu negocio (cámbiala si es necesario)
 DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
 
@@ -94,11 +91,9 @@ def load_catalog():
         logging.error(f"Error cargando catalog.json: {e}")
         return []
 
-def send_telegram(chat_id, text, parse_mode="Markdown", reply_markup=None):
+def send_telegram(chat_id, text, parse_mode="Markdown"):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     data = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
-    if reply_markup:
-        data["reply_markup"] = json.dumps(reply_markup)
     try:
         resp = requests.post(url, json=data)
         if resp.status_code != 200:
@@ -127,6 +122,47 @@ def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
     except Exception as e:
         logging.error(f"Excepción enviando foto: {e}")
         send_telegram(chat_id, caption)
+
+def send_album_telegram(chat_id, catalog):
+    """
+    Envía un álbum con las fotos de todos los productos.
+    Telegram permite hasta 10 fotos por álbum.
+    """
+    try:
+        media_group = []
+        files = {}
+        for i, item in enumerate(catalog):
+            if not os.path.exists(item['imagen']):
+                logging.warning(f"Imagen no encontrada: {item['imagen']}")
+                continue
+            # Usamos un nombre único para cada archivo
+            file_key = f"photo_{i}"
+            files[file_key] = open(item['imagen'], 'rb')
+            caption = f"{item['nombre']} - {item['gramos']}\n💰 {item['precio']}"
+            media_group.append({
+                "type": "photo",
+                "media": f"attach://{file_key}",
+                "caption": caption,
+                "parse_mode": "Markdown"
+            })
+            # Telegram permite máximo 10 fotos por álbum
+            if len(media_group) == 10:
+                break
+        
+        if not media_group:
+            return False
+        
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMediaGroup"
+        data = {"chat_id": chat_id, "media": json.dumps(media_group)}
+        resp = requests.post(url, data=data, files=files)
+        if resp.status_code != 200:
+            logging.error(f"Error enviando álbum: {resp.text}")
+            return False
+        logging.info(f"📸 Álbum enviado con {len(media_group)} fotos")
+        return True
+    except Exception as e:
+        logging.error(f"Excepción enviando álbum: {e}")
+        return False
 
 def send_whatsapp_alert(producto, telefono, cliente, tipo_pago, metodo_pago, fecha_vencimiento=None):
     if not CALLMEBOT_API_KEY or not MI_NUMERO_WHATSAPP:
@@ -170,14 +206,6 @@ def registrar_venta_en_sheets(producto, precio, telefono, cliente, tipo_pago, me
             logging.error(f"❌ Error registrando en Sheets: {resp.text}")
     except Exception as e:
         logging.error(f"❌ Excepción al registrar en Sheets: {e}")
-
-def answer_callback_query(callback_id, text, show_alert=False):
-    url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
-    data = {"callback_query_id": callback_id, "text": text, "show_alert": show_alert}
-    try:
-        requests.post(url, json=data)
-    except Exception as e:
-        logging.error(f"Error respondiendo callback: {e}")
 
 # ============================
 # PROCESAMIENTO DE MENSAJES
@@ -351,22 +379,19 @@ def process_message(update):
             send_telegram(chat_id, "❌ Error al cargar el catálogo. Contacta al administrador.")
             return
         
-        # 🆕 CONSTRUIR TECLADO INLINE CON BOTONES POR CADA PRODUCTO
-        keyboard = []
-        for item in catalog:
-            button_text = f"{item['nombre']} - {item['gramos']} ({item['precio']})"
-            callback_data = f"product_{item['id']}"
-            keyboard.append([{"text": button_text, "callback_data": callback_data}])
+        # 🔥 Enviar álbum con todas las fotos (máximo 10 por álbum)
+        send_album_telegram(chat_id, catalog)
         
-        reply_markup = {"inline_keyboard": keyboard}
-        send_telegram(chat_id,
-            "📋 *Catálogo interactivo:*\n\nSelecciona un producto para ver su imagen y detalles.",
-            reply_markup=reply_markup
-        )
+        # 🔥 Enviar lista numerada con precios
+        msg = "📋 *Nuestro Catálogo:*\n\n"
+        for i, item in enumerate(catalog, start=1):
+            msg += f"{i}. {item['nombre']} - {item['gramos']} ({item['precio']})\n"
+        msg += f"\nResponde con el *número* que deseas.\n\n🚚 *Delivery en {DIRECCION}.*"
+        send_telegram(chat_id, msg)
         return
 
     # ============================================
-    # SELECCIÓN DE PRODUCTO (por número - modo legado)
+    # SELECCIÓN DE PRODUCTO (por número)
     # ============================================
     if text.isdigit():
         num = int(text)
@@ -391,41 +416,6 @@ def process_message(update):
     send_telegram(chat_id, "📌 Usa /menu para ver los productos.")
 
 # ============================
-# PROCESAMIENTO DE CALLBACKS (RESPUESTA A BOTONES INLINE)
-# ============================
-def process_callback(update):
-    query = update["callback_query"]
-    user_id = str(query["from"]["id"])
-    chat_id = query["message"]["chat"]["id"]
-    data = query["data"]
-    callback_id = query["id"]
-
-    logging.info(f"📩 Callback de {user_id}: {data}")
-
-    if data.startswith("product_"):
-        product_id = int(data.split("_")[1])
-        catalog = load_catalog()
-        product = next((p for p in catalog if p["id"] == product_id), None)
-        if product:
-            # Guardar sesión con el producto seleccionado
-            producto = f"{product['nombre']} - {product['gramos']} ({product['precio']})"
-            guardar_sesion(user_id, producto=producto, estado="esperando_telefono")
-            
-            caption = (f"✅ *Elegiste:* {product['nombre']} ({product['gramos']})\n"
-                       f"💰 *Precio:* {product['precio']}\n\n"
-                       f"🚚 *Delivery:* {DIRECCION} (sin costo extra)\n"
-                       "📱 Ahora envíame *tu número de WhatsApp* (ej: 0412-1234567).")
-            try:
-                send_photo_telegram(chat_id, product['imagen'], caption)
-            except Exception as e:
-                logging.error(f"Error enviando foto: {e}")
-                send_telegram(chat_id, caption)
-            
-            answer_callback_query(callback_id, f"✅ {product['nombre']} seleccionado")
-        else:
-            answer_callback_query(callback_id, "❌ Producto no encontrado", show_alert=True)
-
-# ============================
 # RUTAS DE FLASK
 # ============================
 @app.route('/', methods=['GET'])
@@ -439,11 +429,8 @@ def webhook():
         if update and "message" in update:
             logging.info("Webhook recibido, procesando mensaje...")
             process_message(update)
-        elif update and "callback_query" in update:
-            logging.info("Webhook recibido, procesando callback...")
-            process_callback(update)
         else:
-            logging.warning("Webhook recibido sin mensaje ni callback")
+            logging.warning("Webhook recibido sin mensaje")
         return "ok", 200
     except Exception as e:
         logging.error(f"Error en webhook: {e}")
