@@ -17,8 +17,10 @@ TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID_DUENO = os.environ.get("TELEGRAM_CHAT_ID_DUENO")
 CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
 MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
-SECRET_KEY = os.environ.get("SECRET_KEY", "clave_por_defecto_cambiala")
-GOOGLE_SHEETS_URL = os.environ.get("GOOGLE_SHEETS_URL", "https://script.google.com/macros/s/AKfycbyDz19Lde2TPA-WCEW9BCpyZejX2pjRPt8TPSQ9AAXWuQ46AQdM9kp8ocQfp0X1OsJ6Zg/exec")
+SECRET_KEY = os.environ.get("SECRET_KEY", "Marquesas2026!Segura")
+
+# 🔥 URL de Google Sheets (actualizada con la que me pasaste)
+GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyDz19Lde2TPA-WCEW9BCpyZejX2pjRPt8TPSQ9AAXWuQ46AQdM9kp8ocQfp0X1OsJ6Zg/exec"
 
 DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
@@ -33,6 +35,7 @@ def leer_sesion(user_id):
         if resp.status_code == 200:
             data = resp.json()
             if data.get("success") and data.get("data"):
+                logging.info(f"✅ Sesión leída para {user_id}")
                 return data["data"]
         return None
     except Exception as e:
@@ -124,10 +127,6 @@ def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
         send_telegram(chat_id, caption)
 
 def send_album_telegram(chat_id, catalog):
-    """
-    Envía un álbum con las fotos de todos los productos.
-    Telegram permite hasta 10 fotos por álbum.
-    """
     try:
         media_group = []
         files = {}
@@ -135,7 +134,6 @@ def send_album_telegram(chat_id, catalog):
             if not os.path.exists(item['imagen']):
                 logging.warning(f"Imagen no encontrada: {item['imagen']}")
                 continue
-            # Usamos un nombre único para cada archivo
             file_key = f"photo_{i}"
             files[file_key] = open(item['imagen'], 'rb')
             caption = f"{item['nombre']} - {item['gramos']}\n💰 {item['precio']}"
@@ -145,13 +143,10 @@ def send_album_telegram(chat_id, catalog):
                 "caption": caption,
                 "parse_mode": "Markdown"
             })
-            # Telegram permite máximo 10 fotos por álbum
             if len(media_group) == 10:
                 break
-        
         if not media_group:
             return False
-        
         url = f"https://api.telegram.org/bot{TOKEN}/sendMediaGroup"
         data = {"chat_id": chat_id, "media": json.dumps(media_group)}
         resp = requests.post(url, data=data, files=files)
@@ -223,7 +218,6 @@ def process_message(update):
 
     logging.info(f"📩 Mensaje de {username} (ID:{user_id}): '{text}'")
 
-    # Leer sesión desde Google Sheets
     sesion = leer_sesion(user_id)
     if sesion is None:
         sesion = {}
@@ -379,10 +373,8 @@ def process_message(update):
             send_telegram(chat_id, "❌ Error al cargar el catálogo. Contacta al administrador.")
             return
         
-        # 🔥 Enviar álbum con todas las fotos (máximo 10 por álbum)
         send_album_telegram(chat_id, catalog)
         
-        # 🔥 Enviar lista numerada con precios
         msg = "📋 *Nuestro Catálogo:*\n\n"
         for i, item in enumerate(catalog, start=1):
             msg += f"{i}. {item['nombre']} - {item['gramos']} ({item['precio']})\n"
