@@ -7,9 +7,6 @@ from flask import Flask, request, jsonify
 from urllib.parse import quote
 from datetime import datetime, timedelta
 
-# ============================
-# CONFIGURACIÓN
-# ============================
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -19,30 +16,53 @@ CALLMEBOT_API_KEY = os.environ.get("CALLMEBOT_API_KEY")
 MI_NUMERO_WHATSAPP = os.environ.get("MI_NUMERO_WHATSAPP")
 SECRET_KEY = os.environ.get("SECRET_KEY", "Marquesas2026!Segura")
 
-# 🔥 NUEVA URL DE GOOGLE SHEETS (ACTUALIZADA)
+# 🔥 URL de Google Sheets (NUEVA)
 GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyKCqMEcaATBCk8EfEMjMtoaE_Fb502l4P2G-CIe54RaULXADzCUPlE1CFKI0mXumE00A/exec"
 
 DIRECCION = "Oropeza Castillo"
 NOMBRE_NEGOCIO = "Marquesas Orangel"
 
-# ============================
-# FUNCIONES DE GOOGLE SHEETS (PERSISTENCIA DE SESIONES)
-# ============================
+# Cache en memoria para respaldo
+SESSION_CACHE = {}
+
 def leer_sesion(user_id):
+    # Intentar desde caché primero
+    if user_id in SESSION_CACHE:
+        logging.info(f"📦 Sesión leída desde caché para {user_id}")
+        return SESSION_CACHE[user_id]
+    
     try:
         url = f"{GOOGLE_SHEETS_URL}?action=read&user_id={user_id}&secret={SECRET_KEY}"
-        resp = requests.get(url, timeout=10)
+        logging.info(f"📤 URL de lectura: {url}")
+        resp = requests.get(url, timeout=5)
+        logging.info(f"📥 Código de respuesta: {resp.status_code}")
+        logging.info(f"📄 Contenido de respuesta: {resp.text[:200]}")
+        
         if resp.status_code == 200:
             data = resp.json()
             if data.get("success") and data.get("data"):
-                logging.info(f"✅ Sesión leída para {user_id}")
+                # Guardar en caché para futuras lecturas
+                SESSION_CACHE[user_id] = data["data"]
+                logging.info(f"✅ Sesión leída desde Sheets para {user_id}")
                 return data["data"]
         return None
     except Exception as e:
-        logging.error(f"Error leyendo sesión: {e}")
+        logging.error(f"Error leyendo sesión desde Sheets: {e}")
         return None
 
 def guardar_sesion(user_id, producto=None, estado=None, telefono=None, tipo_pago=None, dias_credito=None, metodo_pago=None):
+    # Guardar en caché siempre
+    SESSION_CACHE[user_id] = {
+        "producto": producto or "",
+        "estado": estado or "",
+        "telefono": telefono or "",
+        "tipo_pago": tipo_pago or "",
+        "dias_credito": dias_credito or "",
+        "metodo_pago": metodo_pago or "",
+        "timestamp": datetime.now().isoformat()
+    }
+    logging.info(f"📦 Sesión guardada en caché para {user_id}")
+    
     try:
         data = {
             "action": "write",
@@ -56,9 +76,11 @@ def guardar_sesion(user_id, producto=None, estado=None, telefono=None, tipo_pago
             "timestamp": datetime.now().isoformat(),
             "secret": SECRET_KEY
         }
+        logging.info(f"📤 Guardando sesión en Sheets: {data}")
         resp = requests.post(GOOGLE_SHEETS_URL, json=data, timeout=10)
+        logging.info(f"📥 Respuesta de guardado: {resp.status_code} - {resp.text[:200]}")
         if resp.status_code == 200:
-            logging.info(f"✅ Sesión guardada para {user_id}")
+            logging.info(f"✅ Sesión guardada en Sheets para {user_id}")
             return True
         else:
             logging.error(f"❌ Error guardando sesión: {resp.text}")
@@ -68,6 +90,8 @@ def guardar_sesion(user_id, producto=None, estado=None, telefono=None, tipo_pago
         return False
 
 def eliminar_sesion(user_id):
+    if user_id in SESSION_CACHE:
+        del SESSION_CACHE[user_id]
     try:
         data = {
             "action": "delete",
@@ -78,14 +102,14 @@ def eliminar_sesion(user_id):
         if resp.status_code == 200:
             logging.info(f"✅ Sesión eliminada para {user_id}")
             return True
-        return False
-    except Exception as e:
-        logging.error(f"❌ Error eliminando sesión: {e}")
-        return False
+    except:
+        pass
+    return False
 
 # ============================
-# FUNCIONES AUXILIARES
+# El resto de funciones (load_catalog, send_telegram, send_photo_telegram, send_album_telegram, send_whatsapp_alert, registrar_venta_en_sheets) son iguales
 # ============================
+
 def load_catalog():
     try:
         with open("catalog.json", "r", encoding="utf-8") as f:
@@ -202,9 +226,6 @@ def registrar_venta_en_sheets(producto, precio, telefono, cliente, tipo_pago, me
     except Exception as e:
         logging.error(f"❌ Excepción al registrar en Sheets: {e}")
 
-# ============================
-# PROCESAMIENTO DE MENSAJES
-# ============================
 def process_message(update):
     message = update.get("message")
     if not message:
@@ -407,9 +428,6 @@ def process_message(update):
 
     send_telegram(chat_id, "📌 Usa /menu para ver los productos.")
 
-# ============================
-# RUTAS DE FLASK
-# ============================
 @app.route('/', methods=['GET'])
 def index():
     return "✅ Bot está vivo!", 200
