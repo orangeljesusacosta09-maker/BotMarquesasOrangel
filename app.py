@@ -113,7 +113,7 @@ def send_album_telegram(chat_id, catalog):
         logging.error(f"Excepción enviando álbum: {e}")
         return False
 
-# 🔥 FUNCIÓN WHATSAPP OPTIMIZADA (MENSAJE CORTO Y SIN EMOJIS)
+# 🔥 FUNCIÓN WHATSAPP OPTIMIZADA
 def send_whatsapp_alert(producto, telefono, cliente, tipo_pago, metodo_pago, fecha_vencimiento=None):
     if not CALLMEBOT_API_KEY or not MI_NUMERO_WHATSAPP:
         return
@@ -142,10 +142,10 @@ def send_whatsapp_alert(producto, telefono, cliente, tipo_pago, metodo_pago, fec
     except Exception as e:
         logging.error(f"❌ Error: {e}")
 
-# 🔥 REGISTRO EN SHEETS CON EXTRACCIÓN CORRECTA DE PRECIO
+# 🔥 REGISTRO EN SHEETS CON EXTRACCIÓN CORRECTA DE PRECIO (SIEMPRE EL ÚLTIMO PARÉNTESIS)
 def registrar_venta_en_sheets(producto, telefono, cliente, tipo_pago, metodo_pago, fecha_vencimiento=None):
     try:
-        # 🔥 Extraer precio: SIEMPRE el último paréntesis
+        # 🔥 Extraer precio: buscar el último paréntesis (donde siempre está el precio)
         precio_match = re.search(r'\(([^)]+)\)\s*$', producto)
         precio = precio_match.group(1) if precio_match else "N/A"
 
