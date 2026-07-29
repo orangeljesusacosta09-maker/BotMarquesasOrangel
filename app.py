@@ -3,6 +3,7 @@ import json
 import logging
 import requests
 import re
+import time  # 👈 Importante
 from flask import Flask, request, jsonify
 from urllib.parse import quote
 from datetime import datetime, timedelta
@@ -52,7 +53,7 @@ def send_telegram(chat_id, text, parse_mode="Markdown"):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     data = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
     try:
-        resp = requests.post(url, json=data)
+        resp = requests.post(url, json=data, timeout=15)
         if resp.status_code != 200:
             logging.error(f"Error enviando mensaje: {resp.text}")
         else:
@@ -70,7 +71,7 @@ def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
         with open(photo_path, 'rb') as photo_file:
             files = {'photo': photo_file}
             data = {'chat_id': chat_id, 'caption': caption, 'parse_mode': parse_mode}
-            resp = requests.post(url, files=files, data=data)
+            resp = requests.post(url, files=files, data=data, timeout=15)
             if resp.status_code != 200:
                 logging.error(f"Error enviando foto: {resp.text}")
                 send_telegram(chat_id, caption)
@@ -80,34 +81,37 @@ def send_photo_telegram(chat_id, photo_path, caption, parse_mode="Markdown"):
         logging.error(f"Excepción enviando foto: {e}")
         send_telegram(chat_id, caption)
 
+# 🔥 FUNCIÓN ÁLBUM OPTIMIZADA
 def send_album_telegram(chat_id, catalog):
     try:
-        media_group = []
-        files = {}
-        for i, item in enumerate(catalog):
-            if not os.path.exists(item['imagen']):
-                logging.warning(f"Imagen no encontrada: {item['imagen']}")
-                continue
-            file_key = f"photo_{i}"
-            files[file_key] = open(item['imagen'], 'rb')
-            caption = f"{item['nombre']} - {item['gramos']}\n💰 {item['precio']}"
-            media_group.append({
-                "type": "photo",
-                "media": f"attach://{file_key}",
-                "caption": caption,
-                "parse_mode": "Markdown"
-            })
-            if len(media_group) == 10:
-                break
-        if not media_group:
-            return False
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMediaGroup"
-        data = {"chat_id": chat_id, "media": json.dumps(media_group)}
-        resp = requests.post(url, data=data, files=files)
-        if resp.status_code != 200:
-            logging.error(f"Error enviando álbum: {resp.text}")
-            return False
-        logging.info(f"📸 Álbum enviado con {len(media_group)} fotos")
+        batch_size = 5  # Enviar de 5 en 5 para evitar timeouts
+        for i in range(0, len(catalog), batch_size):
+            batch = catalog[i:i+batch_size]
+            media_group = []
+            files = {}
+            for j, item in enumerate(batch):
+                if not os.path.exists(item['imagen']):
+                    logging.warning(f"Imagen no encontrada: {item['imagen']}")
+                    continue
+                file_key = f"photo_{i+j}"
+                files[file_key] = open(item['imagen'], 'rb')
+                caption = f"{item['nombre']} - {item['gramos']}\n💰 {item['precio']}"
+                media_group.append({
+                    "type": "photo",
+                    "media": f"attach://{file_key}",
+                    "caption": caption,
+                    "parse_mode": "Markdown"
+                })
+            if media_group:
+                url = f"https://api.telegram.org/bot{TOKEN}/sendMediaGroup"
+                data = {"chat_id": chat_id, "media": json.dumps(media_group)}
+                resp = requests.post(url, data=data, files=files, timeout=20)
+                if resp.status_code != 200:
+                    logging.error(f"Error enviando álbum: {resp.text}")
+                    return False
+                logging.info(f"📸 Álbum enviado con {len(media_group)} fotos")
+                # Pequeña pausa para no saturar
+                time.sleep(1)
         return True
     except Exception as e:
         logging.error(f"Excepción enviando álbum: {e}")
@@ -121,7 +125,6 @@ def send_whatsapp_alert(producto, telefono, cliente, tipo_pago, metodo_pago, fec
     if not numero_limpio.isdigit():
         return
 
-    # Limpiar producto: eliminar emojis y caracteres raros
     producto_corto = producto[:30]
     producto_corto = producto_corto.encode('ascii', 'ignore').decode('ascii')
     if tipo_pago == "Crédito" and fecha_vencimiento:
@@ -142,10 +145,9 @@ def send_whatsapp_alert(producto, telefono, cliente, tipo_pago, metodo_pago, fec
     except Exception as e:
         logging.error(f"❌ Error: {e}")
 
-# 🔥 REGISTRO EN SHEETS CON EXTRACCIÓN CORRECTA DE PRECIO (SIEMPRE EL ÚLTIMO PARÉNTESIS)
+# 🔥 REGISTRO EN SHEETS CON EXTRACCIÓN CORRECTA DE PRECIO
 def registrar_venta_en_sheets(producto, telefono, cliente, tipo_pago, metodo_pago, fecha_vencimiento=None):
     try:
-        # 🔥 Extraer precio: buscar el último paréntesis (donde siempre está el precio)
         precio_match = re.search(r'\(([^)]+)\)\s*$', producto)
         precio = precio_match.group(1) if precio_match else "N/A"
 
@@ -184,9 +186,6 @@ def process_message(update):
 
     logging.info(f"📩 Mensaje de {username} (ID:{user_id}): '{text}'")
 
-    # ============================================
-    # COMANDOS (SIEMPRE PRIORITARIOS)
-    # ============================================
     if text == "/start":
         clear_user_state(user_id)
         send_telegram(chat_id,
@@ -212,9 +211,6 @@ def process_message(update):
         send_telegram(chat_id, msg)
         return
 
-    # ============================================
-    # FLUJO DE COMPRA
-    # ============================================
     state = get_user_state(user_id)
     estado_actual = state.get("estado")
     producto_actual = state.get("producto")
@@ -225,7 +221,6 @@ def process_message(update):
 
     logging.info(f"🔍 Estado actual del usuario {user_id}: {estado_actual}")
 
-    # CAPTURA DE TELÉFONO
     if estado_actual == "esperando_telefono":
         phone = text
         phone_clean = phone.replace("+", "").replace("-", "").replace(" ", "").replace("(", "").replace(")", "")
@@ -246,7 +241,6 @@ def process_message(update):
         )
         return
 
-    # CAPTURA DE FORMA DE PAGO
     if estado_actual == "esperando_pago":
         if text == "1":
             state["tipo_pago"] = "Contado"
@@ -275,7 +269,6 @@ def process_message(update):
             send_telegram(chat_id, "❌ Opción inválida. Responde *1* para Contado o *2* para Crédito.")
             return
 
-    # CAPTURA DE DÍAS DE CRÉDITO
     if estado_actual == "esperando_dias_credito":
         if text.isdigit():
             dias = int(text)
@@ -299,7 +292,6 @@ def process_message(update):
             send_telegram(chat_id, "❌ Por favor, responde con un número del *1 al 7*.")
             return
 
-    # CAPTURA DE MÉTODO DE PAGO
     if estado_actual == "esperando_metodo_pago":
         metodos = {
             "1": "Binance",
@@ -354,7 +346,6 @@ def process_message(update):
             send_telegram(chat_id, "❌ Opción inválida. Responde con el *número* del método de pago.")
             return
 
-    # SELECCIÓN DE PRODUCTO (por número)
     if text.isdigit():
         num = int(text)
         catalog = load_catalog()
